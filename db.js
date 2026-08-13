@@ -41,29 +41,62 @@ function initDB() {
     const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     insertSetting.run('RISK_PERCENT', '2.0');
     insertSetting.run('BOT_ACTIVE', 'true');
-    // Bonus: hard cap na broj istovremeno otvorenih pozicija (koristi se u trend_pullback.js)
     insertSetting.run('MAX_CONCURRENT_POSITIONS', '3');
-    // Dinamički leverage: bot sam računa leverage po trejdu na temelju
-    // udaljenosti do stop-lossa, tako da likvidacija ostane sigurno iza SL-a.
-    // MAX_LEVERAGE = tvrdi gornji strop (nikad ne ide iznad ovoga bez obzira na izračun).
-    // LIQUIDATION_SAFETY_FACTOR = koliki dio teoretski max leveragea koristiti (0.5 = pola).
     insertSetting.run('MAX_LEVERAGE', '10');
     insertSetting.run('LIQUIDATION_SAFETY_FACTOR', '0.5');
-    // Cooldown između dva uzastopna entry-ja za isti simbol (u sekundama).
-    // Sprječava ponovni entry odmah nakon što se pozicija zatvori ili podmirila
-    // po SL/TP-u dok se tržišni uvjeti nisu promijenili.
     insertSetting.run('COOLDOWN_SECONDS', '300');
+    // Phase 3 nove postavke
+    insertSetting.run('TRADING_HOURS', '06:00-20:00');     // UTC blackout filter
+    insertSetting.run('MAX_DAILY_LOSS_PERCENT', '5.0');    // daily drawdown circuit breaker
 
     console.log('✅ Baza podataka je spremna.');
 
-    // Migracija: dodaj open_time ako stupac još ne postoji (za starije baze)
+    // Migracije: dodaj stupce ako ne postoje
     const cols = db.pragma('table_info(active_positions)').map(c => c.name);
     if (!cols.includes('open_time')) {
         db.exec("ALTER TABLE active_positions ADD COLUMN open_time DATETIME DEFAULT CURRENT_TIMESTAMP");
         console.log('✅ Migracija: dodan stupac open_time u active_positions.');
     }
+    if (!cols.includes('unrealized_pnl')) {
+        db.exec("ALTER TABLE active_positions ADD COLUMN unrealized_pnl REAL");
+        console.log('✅ Migracija: dodan stupac unrealized_pnl u active_positions.');
+    }
+    if (!cols.includes('highest_price')) {
+        db.exec("ALTER TABLE active_positions ADD COLUMN highest_price REAL");
+        console.log('✅ Migracija: dodan stupac highest_price u active_positions.');
+    }
+    if (!cols.includes('lowest_price')) {
+        db.exec("ALTER TABLE active_positions ADD COLUMN lowest_price REAL");
+        console.log('✅ Migracija: dodan stupac lowest_price u active_positions.');
+    }
+}
+
+// ── Daily drawdown circuit breaker ──────────────────────────────────────────
+// Vraća true ako je današnji realized PnL gubitak veći od MAX_DAILY_LOSS_PERCENT posto balansa.
+function isDailyDrawdownBreached(db, balance) {
+    try {
+        const setting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_DAILY_LOSS_PERCENT');
+        const maxLossPct = setting ? parseFloat(setting.value) : 5.0;
+        const maxLossAmt = balance * (maxLossPct / 100);
+
+        // Svi trejdovi zatvoreni danas (UTC dan)
+        const todayStart = new Date();
+        todayStart.setUTCHours(0, 0, 0, 0);
+        const trades = db.prepare(
+            "SELECT realized_pnl FROM trades WHERE timestamp >= ? AND realized_pnl IS NOT NULL"
+        ).all(todayStart.toISOString());
+
+        const dailyPnl = trades.reduce((s, t) => s + t.realized_pnl, 0);
+        if (dailyPnl < -maxLossAmt) {
+            console.warn(`[DRAWDOWN] Dnevni gubitak $${Math.abs(dailyPnl).toFixed(2)} premašio limit $${maxLossAmt.toFixed(2)} (${maxLossPct}% od $${balance.toFixed(2)})`);
+            return true;
+        }
+        return false;
+    } catch (_) {
+        return false;
+    }
 }
 
 initDB();
 
-module.exports = { db };
+module.exports = { db, isDailyDrawdownBreached };

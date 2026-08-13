@@ -107,6 +107,14 @@
             </div>
         </div>
 
+        <!-- UNREALIZED PNL -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">UNREALIZED PNL (live)</div>
+            <div id="unrealizedPnl" class="text-xs border border-green-900 divide-y divide-green-900">
+                <div class="p-2 text-green-800">--</div>
+            </div>
+        </div>
+
         <!-- TRADE HISTORY -->
         <div class="mb-4">
             <div class="text-xs text-green-700 mb-1">POVIJEST TREJDOVA (zadnjih 20)</div>
@@ -311,13 +319,18 @@
                 el.innerHTML = res.map(p => {
                     const openedAt = p.open_time ? new Date(p.open_time).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--';
                     return `
-                    <div class="flex justify-between items-center border border-green-800 p-2">
-                        <div>
-                            <div>${p.symbol} <span class="${p.side === 'buy' ? 'text-green-400' : 'text-red-400'}">${p.side.toUpperCase()}</span></div>
-                            <div class="text-[10px] text-green-700">Ulaz: $${p.entry_price} | SL: $${p.stop_loss} | TP: $${p.take_profit}</div>
-                            <div class="text-[10px] text-green-800">Otvoreno: ${openedAt}</div>
+                    <div class="border border-green-800 p-2">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <div>${p.symbol} <span class="${p.side === 'buy' ? 'text-green-400' : 'text-red-400'}">${p.side.toUpperCase()}</span></div>
+                                <div class="text-[10px] text-green-700">Ulaz: $${p.entry_price} | SL: $${p.stop_loss} | TP: $${p.take_profit}</div>
+                                <div class="text-[10px] text-green-800">Otvoreno: ${openedAt}</div>
+                            </div>
+                            <div class="flex flex-col gap-1 text-right">
+                                <button onclick="closePos('${p.symbol}')" class="text-red-500 underline text-xs">CLOSE</button>
+                                <button onclick="moveSLBreakeven('${p.symbol}')" class="text-yellow-500 underline text-xs">SL→BE</button>
+                            </div>
                         </div>
-                        <button onclick="closePos('${p.symbol}')" class="text-red-500 underline text-xs">CLOSE</button>
                     </div>
                 `;
                 }).join('');
@@ -387,6 +400,7 @@
                             <div class="flex justify-between p-2">
                                 <span>${sym}</span>
                                 <span class="text-green-700">${d.trades} trejdova</span>
+                                <span class="text-green-600">${d.winRate != null ? d.winRate + '% W' : '--'}</span>
                                 <span class="${pnlColor(d.pnl)}">${fmtSigned(d.pnl)}</span>
                             </div>
                         `).join('');
@@ -397,9 +411,27 @@
             }
         }
 
-        async function refreshAll() {
+        async function loadUnrealizedPnl() {
             try {
-                await Promise.all([loadBalance(), loadPositions(), loadTrades(), loadStats()]);
+                const data = await apiFetch('/api/unrealized-pnl');
+                const el = document.getElementById('unrealizedPnl');
+                if (!Array.isArray(data) || data.length === 0) {
+                    el.innerHTML = '<div class="p-2 text-green-800">Nema otvorenih pozicija.</div>';
+                    return;
+                }
+                el.innerHTML = data.map(p => `
+                    <div class="flex justify-between p-2">
+                        <span>${p.symbol}</span>
+                        <span class="text-green-700">Mark: ${p.markPrice != null ? '$' + Number(p.markPrice).toFixed(2) : '--'}</span>
+                        <span class="${pnlColor(p.unrealizedPnl)}">${p.unrealizedPnl != null ? fmtSigned(p.unrealizedPnl) : '--'}</span>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Unrealized PnL error:', err);
+            }
+        }
+            try {
+                await Promise.all([loadBalance(), loadPositions(), loadUnrealizedPnl(), loadTrades(), loadStats()]);
             } catch (e) {
                 console.error('Refresh error:', e);
             }
@@ -416,6 +448,19 @@
                 await refreshAll();
             } catch (err) {
                 alert('Greška pri zatvaranju pozicije: ' + err.message);
+            }
+        }
+
+        async function moveSLBreakeven(sym) {
+            try {
+                await apiFetch('/api/move-sl-breakeven', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol: sym })
+                });
+                await refreshAll();
+            } catch (err) {
+                alert('Greška pri pomaku SL: ' + err.message);
             }
         }
 
@@ -443,21 +488,27 @@
             MAX_LEVERAGE:               { label: 'Max leverage (x)',     type: 'number', step: '1',   min: '1',   max: '125' },
             LIQUIDATION_SAFETY_FACTOR:  { label: 'Likv. sigurnosni faktor (0–1)', type: 'number', step: '0.05', min: '0.1', max: '1' },
             MAX_CONCURRENT_POSITIONS:   { label: 'Max istovremene pozicije', type: 'number', step: '1', min: '1', max: '20' },
-            COOLDOWN_SECONDS:           { label: 'Cooldown između trejdova (s)', type: 'number', step: '10', min: '0', max: '3600' }
+            COOLDOWN_SECONDS:           { label: 'Cooldown između trejdova (s)', type: 'number', step: '10', min: '0', max: '3600' },
+            TRADING_HOURS:              { label: 'Trading sati UTC (npr. 06:00-20:00)', type: 'text', step: null, min: null, max: null },
+            MAX_DAILY_LOSS_PERCENT:     { label: 'Max dnevni gubitak (%)', type: 'number', step: '0.5', min: '0.5', max: '50' }
         };
 
         async function loadSettings() {
             try {
                 const s = await apiFetch('/api/settings');
                 const panel = document.getElementById('settingsPanel');
-                panel.innerHTML = Object.entries(SETTINGS_META).map(([key, meta]) => `
+                panel.innerHTML = Object.entries(SETTINGS_META).map(([key, meta]) => {
+                    const extraAttrs = meta.type === 'number'
+                        ? `step="${meta.step}" min="${meta.min}" max="${meta.max}"`
+                        : '';
+                    return `
                     <div class="flex justify-between items-center">
                         <label class="text-green-700 w-2/3">${meta.label}</label>
-                        <input id="setting_${key}" type="${meta.type}" step="${meta.step}" min="${meta.min}" max="${meta.max}"
+                        <input id="setting_${key}" type="${meta.type}" ${extraAttrs}
                             value="${s[key] ?? ''}"
                             class="bg-black border border-green-800 p-1 w-28 text-green-400 outline-none focus:border-green-500 text-right" />
                     </div>
-                `).join('');
+                `}).join('');
             } catch (err) {
                 console.error('Settings load error:', err);
             }

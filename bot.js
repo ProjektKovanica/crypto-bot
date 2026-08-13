@@ -1,10 +1,10 @@
 require('dotenv').config();
 const ccxt = require('ccxt');
 const { startServer } = require('./server');
-const { db } = require('./db');
+const { db, isDailyDrawdownBreached } = require('./db');
 const { getIndicators } = require('./strategies/indicators');
 const { evaluateAndTrade } = require('./strategies/trend_pullback');
-const { syncPositions } = require('./strategies/position_manager');
+const { syncPositions, monitorTrailingStops } = require('./strategies/position_manager');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -121,6 +121,12 @@ async function checkMarkets() {
             return;
         }
 
+        // DAILY DRAWDOWN CIRCUIT BREAKER: pauzira novi entry za taj dan ako je gubitak prevelik
+        if (isDailyDrawdownBreached(db, usdcBalance)) {
+            console.warn(`[CYCLE ${cycleId}] ⛔ Dnevni drawdown limit dostignut — preskačem novi entry.`);
+            return;
+        }
+
         // PRECHECK: pokupi cooldown i maks-pozicije samo jednom, ne u svakoj petlji
         const cooldownSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('COOLDOWN_SECONDS');
         const cooldownMs = (cooldownSetting ? parseInt(cooldownSetting.value, 10) : 300) * 1000;
@@ -158,8 +164,6 @@ async function checkMarkets() {
                 console.log(`[CYCLE ${cycleId}] ${symbol} -> dohvat indikatora...`);
                 const indicators = await getIndicators(exchange, symbol, '15m', 100);
 
-                // puna provjera - ne samo da indicators postoji, nego da su
-                // rsi/ema/macd.histogram stvarno izračunati (rani start = nema dosta svijeća)
                 if (
                     !indicators ||
                     indicators.currentPrice == null ||
@@ -174,7 +178,7 @@ async function checkMarkets() {
                 }
 
                 console.log(
-                    `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi} ema=${indicators.ema} macdHist=${indicators.macd.histogram}`
+                    `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi?.toFixed(2)} ema=${indicators.ema?.toFixed(4)} macdHist=${indicators.macd.histogram?.toFixed(6)} adx=${indicators.adx?.toFixed(1)} mtfBull=${indicators.mtfBullish} mtfBear=${indicators.mtfBearish} vol=${indicators.currentVolume?.toFixed(0)} volSMA=${indicators.volumeSMA?.toFixed(0)}`
                 );
                 botState.lastPrices[symbol] = indicators.currentPrice;
 
@@ -213,6 +217,9 @@ async function startBot() {
         // pokreni odmah prvi ciklus, pa onda periodično
         await checkMarkets();
         setInterval(checkMarkets, 15000);
+
+        // Trailing stop monitor: svakih 30s neovisno od entry ciklusa
+        setInterval(() => monitorTrailingStops(exchange, db), 30000);
     } catch (error) {
         console.error('Kritična greška:', error.message);
         process.exit(1);

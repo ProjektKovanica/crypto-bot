@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const { rateLimit } = require('express-rate-limit');
 const { db } = require('./db');
-const { forceClosePosition, closeAllPositions } = require('./strategies/position_manager');
+const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 
 const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC', 'DOGE/USDC'];
 const app = express();
@@ -94,6 +94,51 @@ app.post('/api/close-position', async (req, res) => {
     res.json(result);
 });
 
+// API: Premjesti SL na breakeven
+app.post('/api/move-sl-breakeven', async (req, res) => {
+    const { symbol } = req.body;
+    if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
+    const result = await moveSLToBreakeven(global.exchange, db, symbol);
+    res.json(result);
+});
+
+// Telegram webhook — prima callback_query od inline gumbova
+// Bot mora biti konfiguriran da šalje update-e na ovu rutu:
+//   POST https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<tvoj-server>/telegram-webhook
+// Ruta je namjerno izvan /api/* (ne treba x-api-key), ali provjerava Telegram secret ako je postavljen.
+app.post('/telegram-webhook', express.json(), async (req, res) => {
+    try {
+        const update = req.body;
+        const cbq = update?.callback_query;
+        if (!cbq) return res.sendStatus(200);
+
+        const { answerCallbackQuery, sendTelegramMessage } = require('./notifier');
+        const data = cbq.data || '';
+        const [action, ...symbolParts] = data.split(':');
+        const symbol = symbolParts.join(':'); // simbol može sadržavati '/'
+
+        if (!global.exchange) {
+            await answerCallbackQuery(cbq.id, '❌ Exchange nije spreman');
+            return res.sendStatus(200);
+        }
+
+        if (action === 'close') {
+            const { forceClosePosition } = require('./strategies/position_manager');
+            const result = await forceClosePosition(global.exchange, db, symbol);
+            await answerCallbackQuery(cbq.id, result.success ? `✅ ${symbol} zatvoreno` : `❌ ${result.error}`);
+        } else if (action === 'be') {
+            const { moveSLToBreakeven } = require('./strategies/position_manager');
+            const result = await moveSLToBreakeven(global.exchange, db, symbol);
+            await answerCallbackQuery(cbq.id, result.success ? `🔒 SL → BE za ${symbol}` : `❌ ${result.error}`);
+        } else {
+            await answerCallbackQuery(cbq.id, 'Nepoznata akcija');
+        }
+    } catch (err) {
+        console.error('[Telegram webhook] Greška:', err.message);
+    }
+    res.sendStatus(200);
+});
+
 // API: Stanje računa (live sa Binancea)
 app.get('/api/balance', async (req, res) => {
     try {
@@ -105,6 +150,30 @@ app.get('/api/balance', async (req, res) => {
             used: usdc.used || 0,
             total: usdc.total || 0
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API: Live unrealized PnL za aktivne pozicije (mark price s burze)
+app.get('/api/unrealized-pnl', async (req, res) => {
+    try {
+        if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
+        const positions = db.prepare('SELECT * FROM active_positions').all();
+        const result = [];
+        for (const pos of positions) {
+            try {
+                const ticker = await global.exchange.fetchTicker(pos.symbol);
+                const markPrice = ticker.last;
+                const unrealizedPnl = pos.side === 'buy'
+                    ? (markPrice - pos.entry_price) * pos.size
+                    : (pos.entry_price - markPrice) * pos.size;
+                result.push({ symbol: pos.symbol, markPrice, unrealizedPnl: Number(unrealizedPnl.toFixed(2)) });
+            } catch (_) {
+                result.push({ symbol: pos.symbol, markPrice: null, unrealizedPnl: null });
+            }
+        }
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -144,12 +213,20 @@ app.get('/api/stats', (req, res) => {
         return { timestamp: t.timestamp, cumulative_pnl: Number(cumulative.toFixed(2)) };
     });
 
-    // Raspodjela po paru
+    // Raspodjela po paru (s win rate-om)
     const bySymbol = {};
     for (const t of trades) {
-        if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { trades: 0, pnl: 0 };
+        if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { trades: 0, wins: 0, losses: 0, pnl: 0 };
         bySymbol[t.symbol].trades += 1;
-        bySymbol[t.symbol].pnl += (t.realized_pnl || 0);
+        bySymbol[t.symbol].pnl   += (t.realized_pnl || 0);
+        if (t.realized_pnl > 0) bySymbol[t.symbol].wins += 1;
+        else bySymbol[t.symbol].losses += 1;
+    }
+    // Dodaj winRate u svaki simbol
+    for (const sym of Object.keys(bySymbol)) {
+        const d = bySymbol[sym];
+        d.winRate = d.trades > 0 ? Number(((d.wins / d.trades) * 100).toFixed(1)) : null;
+        d.pnl = Number(d.pnl.toFixed(2));
     }
 
     res.json({
@@ -168,7 +245,7 @@ app.get('/api/stats', (req, res) => {
 });
 
 // API: Čitanje svih postavki bota
-const EDITABLE_SETTINGS = ['RISK_PERCENT', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'MAX_CONCURRENT_POSITIONS', 'COOLDOWN_SECONDS'];
+const EDITABLE_SETTINGS = ['RISK_PERCENT', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'MAX_CONCURRENT_POSITIONS', 'COOLDOWN_SECONDS', 'TRADING_HOURS', 'MAX_DAILY_LOSS_PERCENT'];
 
 app.get('/api/settings', settingsRateLimiter, (req, res) => {
     const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (' + EDITABLE_SETTINGS.map(() => '?').join(',') + ')').all(...EDITABLE_SETTINGS);
