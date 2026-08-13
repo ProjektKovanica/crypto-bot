@@ -52,4 +52,16 @@ async function forceClosePosition(exchange, db, symbol) {
     }
 }
 
-module.exports = { syncPositions, forceClosePosition };
+// Novo: pravi "zatvori sve" - koristi se za EMERGENCY_STOP na dashboardu,
+// dok stari kill-switch samo gasi nove entryje ali ostavlja postojeći rizik otvoren.
+async function closeAllPositions(exchange, db) {
+    const positions = db.prepare('SELECT symbol FROM active_positions').all();
+    const results = [];
+    for (const pos of positions) {
+        const result = await forceClosePosition(exchange, db, pos.symbol);
+        results.push({ symbol: pos.symbol, ...result });
+    }
+    return results;
+}
+
+module.exports = { syncPositions, forceClosePosition, closeAllPositions };

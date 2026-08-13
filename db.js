@@ -31,11 +31,19 @@ function initDB() {
             value TEXT
         );
     `);
-    
+
     const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
     insertSetting.run('RISK_PERCENT', '2.0');
     insertSetting.run('BOT_ACTIVE', 'true');
-    
+    // Bonus: hard cap na broj istovremeno otvorenih pozicija (koristi se u trend_pullback.js)
+    insertSetting.run('MAX_CONCURRENT_POSITIONS', '3');
+    // Dinamički leverage: bot sam računa leverage po trejdu na temelju
+    // udaljenosti do stop-lossa, tako da likvidacija ostane sigurno iza SL-a.
+    // MAX_LEVERAGE = tvrdi gornji strop (nikad ne ide iznad ovoga bez obzira na izračun).
+    // LIQUIDATION_SAFETY_FACTOR = koliki dio teoretski max leveragea koristiti (0.5 = pola).
+    insertSetting.run('MAX_LEVERAGE', '10');
+    insertSetting.run('LIQUIDATION_SAFETY_FACTOR', '0.5');
+
     console.log('✅ Baza podataka je spremna.');
 }
 

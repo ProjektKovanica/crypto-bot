@@ -3,175 +3,433 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Algo-Bot Dashboard</title>
+    <title>Crypto Terminal</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
     <style>
-        body { background-color: #0f172a; color: #f8fafc; }
-        .tv-chart { height: 400px; width: 100%; }
+        body { -webkit-font-smoothing: antialiased; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: #14532d; }
     </style>
 </head>
-<body class="p-4 md:p-8 font-sans">
+<body class="bg-black text-green-500 font-mono p-4 pb-16">
 
-    <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b border-slate-700 pb-4">
-        <div>
-            <h1 class="text-3xl font-bold text-blue-400">Trading Bot Dashboard</h1>
-            <p class="text-sm text-slate-400 mt-1">Status: <span id="bot-status" class="font-bold text-green-400">PROVJERA...</span></p>
-        </div>
-        <button onclick="killSwitch()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg w-full md:w-auto transition">
-            🛑 KILL SWITCH (Pauziraj bota)
-        </button>
-    </header>
-
-    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        <div class="xl:col-span-2 space-y-6">
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
-                <h2 class="text-xl font-semibold mb-4">BTC/USDC (15m) Analiza</h2>
-                <div id="tv-chart" class="tv-chart rounded overflow-hidden"></div>
-            </div>
-
-            <div class="bg-slate-800 p-4 rounded-xl shadow-md overflow-x-auto">
-                <h2 class="text-xl font-semibold mb-4 text-emerald-400">Trenutno Otvorene Pozicije</h2>
-                <table class="w-full text-left text-sm whitespace-nowrap">
-                    <thead class="text-slate-400 border-b border-slate-700">
-                        <tr>
-                            <th class="pb-2">Par</th>
-                            <th class="pb-2">Smjer</th>
-                            <th class="pb-2">Ulazna Cijena</th>
-                            <th class="pb-2">Veličina</th>
-                            <th class="pb-2">Akcija</th>
-                        </tr>
-                    </thead>
-                    <tbody id="positions-body">
-                        <tr><td colspan="5" class="pt-4 text-center text-slate-500">Učitavanje...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        <div class="bg-slate-800 p-4 rounded-xl shadow-md overflow-x-auto h-fit max-h-[800px] overflow-y-auto">
-            <h2 class="text-xl font-semibold mb-4 text-blue-300">Povijest Tradeova</h2>
-            <table class="w-full text-left text-sm">
-                <thead class="text-slate-400 border-b border-slate-700">
-                    <tr>
-                        <th class="pb-2">Vrijeme</th>
-                        <th class="pb-2">Par</th>
-                        <th class="pb-2">PnL</th>
-                    </tr>
-                </thead>
-                <tbody id="trades-body">
-                    </tbody>
-            </table>
+    <!-- LOGIN OVERLAY -->
+    <div id="loginOverlay" class="fixed inset-0 bg-black z-50 flex items-center justify-center p-4">
+        <div class="w-full max-w-sm border border-green-800 p-6">
+            <h1 class="text-lg mb-1 text-green-400">SYSTEM_MONITOR_V2</h1>
+            <p class="text-xs text-green-700 mb-4">Unesi API ključ za pristup dashboardu</p>
+            <input id="loginInput" type="password" placeholder="API ključ"
+                class="bg-black border border-green-800 p-2 w-full mb-3 text-green-400 outline-none focus:border-green-500" />
+            <button onclick="doLogin()" class="w-full bg-green-900 text-green-300 p-2 border border-green-700">POVEŽI SE</button>
+            <p id="loginError" class="text-red-500 text-xs mt-3 hidden"></p>
         </div>
     </div>
 
+    <div class="max-w-2xl mx-auto">
+        <div class="flex items-center justify-between border-b border-green-900 pb-2 mb-4">
+            <h1 class="text-2xl">SYSTEM_MONITOR_V2</h1>
+            <span id="connStatus" class="text-xs text-green-700">●連 offline</span>
+        </div>
+
+        <div id="globalError" class="hidden mb-4 p-2 border border-red-700 text-red-400 text-xs"></div>
+
+        <!-- ACCOUNT / BALANCE -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">STANJE RAČUNA (USDC)</div>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">TOTAL</div>
+                    <div id="balTotal" class="text-lg">--</div>
+                </div>
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">SLOBODNO</div>
+                    <div id="balFree" class="text-lg">--</div>
+                </div>
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">U POZICIJAMA</div>
+                    <div id="balUsed" class="text-lg">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PNL STATS -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">PERFORMANSE</div>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">UKUPNI PNL</div>
+                    <div id="statPnl" class="text-lg">--</div>
+                </div>
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">WIN RATE</div>
+                    <div id="statWinRate" class="text-lg">--</div>
+                </div>
+            </div>
+            <div class="grid grid-cols-4 gap-2 text-center">
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">TREJDOVA</div>
+                    <div id="statTotal" class="text-sm">--</div>
+                </div>
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">W / L</div>
+                    <div id="statWL" class="text-sm">--</div>
+                </div>
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">AVG WIN</div>
+                    <div id="statAvgWin" class="text-sm">--</div>
+                </div>
+                <div class="border border-green-900 p-2">
+                    <div class="text-[10px] text-green-700">AVG LOSS</div>
+                    <div id="statAvgLoss" class="text-sm">--</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EQUITY CURVE -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">EQUITY KRIVULJA (kumulativni PnL)</div>
+            <div id="equityChart" class="h-40 border border-green-800"></div>
+        </div>
+
+        <!-- PAR + CANDLESTICK CHART -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">GRAF PARA</div>
+            <select id="pair" onchange="initChart()" class="bg-black border border-green-800 p-2 w-full mb-2"></select>
+            <div id="chart" class="h-56 border border-green-800"></div>
+        </div>
+
+        <!-- OPEN POSITIONS -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">AKTIVNE POZICIJE</div>
+            <div id="pos" class="space-y-2 text-xs">
+                <div class="text-green-800">Nema otvorenih pozicija.</div>
+            </div>
+        </div>
+
+        <!-- TRADE HISTORY -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">POVIJEST TREJDOVA (zadnjih 20)</div>
+            <div id="tradeHistory" class="text-xs border border-green-900 divide-y divide-green-900">
+                <div class="p-2 text-green-800">Učitavam...</div>
+            </div>
+        </div>
+
+        <!-- BY SYMBOL BREAKDOWN -->
+        <div class="mb-4">
+            <div class="text-xs text-green-700 mb-1">PNL PO PARU</div>
+            <div id="bySymbol" class="text-xs border border-green-900 divide-y divide-green-900">
+                <div class="p-2 text-green-800">Učitavam...</div>
+            </div>
+        </div>
+
+        <button onclick="pause()" class="w-full mt-2 bg-yellow-900 text-yellow-500 p-2 border border-yellow-700">PAUSE_NEW_ENTRIES</button>
+        <button onclick="emergencyStop()" class="w-full mt-2 bg-red-900 text-red-500 p-2 border border-red-700">EMERGENCY_STOP (zatvori sve)</button>
+    </div>
+
     <script>
-        // 1. Inicijalizacija TradingView Grafa
-        const chart = LightweightCharts.createChart(document.getElementById('tv-chart'), {
-            layout: { background: { type: 'solid', color: '#1e293b' }, textColor: '#cbd5e1' },
-            grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-            timeScale: { timeVisible: true, secondsVisible: false }
-        });
-        const candleSeries = chart.addCandlestickSeries({
-            upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
-        });
+        // ---------- AUTH ----------
+        // API ključ se pamti u localStorage (ovo je stvarna produkcijska stranica na
+        // tvom vlastitom VPS-u, ne Claude artifact, pa je localStorage ovdje sasvim uredu).
+        let API_KEY = localStorage.getItem('dashboard_api_key') || '';
 
-        // Dohvaćanje stvarnih svijeća direktno s Binancea za prikaz
-        async function loadChartData() {
-            try {
-                const res = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDC&interval=15m&limit=100');
-                const data = await res.json();
-                const cdata = data.map(d => ({
-                    time: d[0] / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
-                }));
-                candleSeries.setData(cdata);
-            } catch (e) { console.error("Greška pri učitavanju grafa:", e); }
+        function authHeaders() {
+            return { 'x-api-key': API_KEY };
         }
 
-        // 2. Osvježavanje podataka s našeg API-ja (Eksplicitno na port 5050)
-        async function updateDashboard() {
+        async function doLogin() {
+            const input = document.getElementById('loginInput');
+            const errEl = document.getElementById('loginError');
+            const candidate = input.value.trim();
+            errEl.classList.add('hidden');
+
             try {
-                // Status
-                const statusRes = await fetch('http://145.223.116.178:5050/api/status');
-                const { status } = await statusRes.json();
-                const statusEl = document.getElementById('bot-status');
-                statusEl.innerText = status;
-                statusEl.className = status === 'RUNNING' ? 'font-bold text-green-400' : 'font-bold text-red-500';
-
-                // Aktivne pozicije
-                const posRes = await fetch('http://145.223.116.178:5050/api/positions');
-                const positions = await posRes.json();
-                let posHtml = '';
-                if(positions.length === 0) posHtml = '<tr><td colspan="5" class="pt-4 text-center text-slate-500">Nema otvorenih pozicija.</td></tr>';
-                positions.forEach(p => {
-                    const sideColor = p.side === 'buy' ? 'text-green-400' : 'text-red-400';
-                    posHtml += `
-                        <tr class="border-b border-slate-700/50">
-                            <td class="py-3 font-semibold">${p.symbol}</td>
-                            <td class="py-3 font-bold ${sideColor}">${p.side.toUpperCase()}</td>
-                            <td class="py-3">$${parseFloat(p.entry_price).toFixed(2)}</td>
-                            <td class="py-3">${p.size}</td>
-                            <td class="py-3">
-                                <button onclick="closePosition('${p.symbol}')" class="bg-red-500/20 hover:bg-red-500 hover:text-white text-red-400 text-xs px-3 py-1 rounded transition border border-red-500">
-                                    Zatvori
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-                document.getElementById('positions-body').innerHTML = posHtml;
-
-                // Povijest
-                const tradesRes = await fetch('http://145.223.116.178:5050/api/trades');
-                const trades = await tradesRes.json();
-                let tradesHtml = '';
-                trades.forEach(t => {
-                    const date = new Date(t.timestamp).toLocaleTimeString('hr-HR', {hour: '2-digit', minute:'2-digit'});
-                    const pnlClass = t.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400';
-                    const pnlPrefix = t.realized_pnl >= 0 ? '+' : '';
-                    tradesHtml += `
-                        <tr class="border-b border-slate-700/50">
-                            <td class="py-2 text-slate-400">${date}</td>
-                            <td class="py-2">${t.symbol}</td>
-                            <td class="py-2 font-bold ${pnlClass}">${pnlPrefix}$${parseFloat(t.realized_pnl).toFixed(2)}</td>
-                        </tr>
-                    `;
-                });
-                document.getElementById('trades-body').innerHTML = tradesHtml;
-
-            } catch (e) { console.error("Greška pri osvježavanju:", e); }
-        }
-
-        // 3. Akcije (Gumbi)
-        async function killSwitch() {
-            if(confirm('Jesi li siguran da želiš zaustaviti bota? Otvorene pozicije ostat će na Binanceu, ali bot neće otvarati nove.')) {
-                await fetch('http://145.223.116.178:5050/api/kill-switch', { method: 'POST' });
-                updateDashboard();
+                const res = await fetch('/api/pairs', { headers: { 'x-api-key': candidate } });
+                if (res.status === 401) {
+                    errEl.textContent = 'Pogrešan API ključ.';
+                    errEl.classList.remove('hidden');
+                    return;
+                }
+                if (!res.ok) {
+                    errEl.textContent = `Greška servera (status ${res.status}).`;
+                    errEl.classList.remove('hidden');
+                    return;
+                }
+                API_KEY = candidate;
+                localStorage.setItem('dashboard_api_key', API_KEY);
+                document.getElementById('loginOverlay').classList.add('hidden');
+                boot();
+            } catch (err) {
+                errEl.textContent = 'Server nedostupan: ' + err.message;
+                errEl.classList.remove('hidden');
             }
         }
 
-        async function closePosition(symbol) {
-            if(confirm(`Zatvoriti trenutnu poziciju za ${symbol}?`)) {
-                await fetch('http://145.223.116.178:5050/api/close-position', {
+        function logout() {
+            localStorage.removeItem('dashboard_api_key');
+            location.reload();
+        }
+
+        // ---------- FETCH WRAPPER ----------
+        function showError(message) {
+            const el = document.getElementById('globalError');
+            el.textContent = '⚠️ ' + message;
+            el.classList.remove('hidden');
+            document.getElementById('connStatus').textContent = '● offline';
+            document.getElementById('connStatus').className = 'text-xs text-red-500';
+        }
+
+        function clearError() {
+            document.getElementById('globalError').classList.add('hidden');
+            document.getElementById('connStatus').textContent = '● online';
+            document.getElementById('connStatus').className = 'text-xs text-green-500';
+        }
+
+        async function apiFetch(url, options = {}) {
+            let res;
+            try {
+                res = await fetch(url, { ...options, headers: { ...(options.headers || {}), ...authHeaders() } });
+            } catch (networkErr) {
+                throw new Error(`Server nedostupan (${networkErr.message})`);
+            }
+
+            if (res.status === 401) {
+                // Ključ je u međuvremenu postao nevažeći - vrati na login
+                localStorage.removeItem('dashboard_api_key');
+                document.getElementById('loginOverlay').classList.remove('hidden');
+                throw new Error('Sesija istekla, prijavi se ponovno.');
+            }
+
+            let data;
+            try {
+                data = await res.json();
+            } catch (parseErr) {
+                throw new Error(`Neispravan odgovor servera (status ${res.status})`);
+            }
+
+            if (!res.ok) {
+                throw new Error(data.error || `Greška servera (status ${res.status})`);
+            }
+
+            return data;
+        }
+
+        // ---------- FORMATTING ----------
+        const fmt = (n) => (n == null || isNaN(n)) ? '--' : `$${Number(n).toFixed(2)}`;
+        const fmtSigned = (n) => {
+            if (n == null || isNaN(n)) return '--';
+            const v = Number(n);
+            return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
+        };
+        const pnlColor = (n) => (n == null) ? 'text-green-600' : (n >= 0 ? 'text-green-400' : 'text-red-500');
+
+        // ---------- CHARTS ----------
+        let chart, candleSeries, equityChart, equitySeries;
+
+        function initCharts() {
+            chart = LightweightCharts.createChart(document.getElementById('chart'), {
+                layout: { background: { color: '#000' }, textColor: '#16a34a' },
+                grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
+            });
+            candleSeries = chart.addCandlestickSeries();
+
+            equityChart = LightweightCharts.createChart(document.getElementById('equityChart'), {
+                layout: { background: { color: '#000' }, textColor: '#16a34a' },
+                grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
+            });
+            equitySeries = equityChart.addAreaSeries({
+                lineColor: '#22c55e', topColor: 'rgba(34,197,94,0.3)', bottomColor: 'rgba(34,197,94,0)'
+            });
+
+            new ResizeObserver(() => {
+                chart.applyOptions({ width: document.getElementById('chart').clientWidth });
+                equityChart.applyOptions({ width: document.getElementById('equityChart').clientWidth });
+            }).observe(document.getElementById('chart').parentElement);
+        }
+
+        async function initChart() {
+            const sym = document.getElementById('pair').value;
+            if (!sym) return;
+            try {
+                const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym.replace('/','')}&interval=15m&limit=100`);
+                if (!res.ok) throw new Error(`Binance API greška (status ${res.status})`);
+                const data = await res.json();
+                candleSeries.setData(data.map(d => ({ time: d[0] / 1000, open: +d[1], high: +d[2], low: +d[3], close: +d[4] })));
+            } catch (err) {
+                showError('Ne mogu učitati graf: ' + err.message);
+            }
+        }
+
+        // ---------- DATA LOADERS ----------
+        async function loadPairs() {
+            const pairs = await apiFetch('/api/pairs');
+            const sel = document.getElementById('pair');
+            sel.innerHTML = '';
+            pairs.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
+            initChart();
+        }
+
+        async function loadBalance() {
+            try {
+                const b = await apiFetch('/api/balance');
+                document.getElementById('balTotal').textContent = fmt(b.total);
+                document.getElementById('balFree').textContent = fmt(b.free);
+                document.getElementById('balUsed').textContent = fmt(b.used);
+                clearError();
+            } catch (err) {
+                showError('Balans: ' + err.message);
+            }
+        }
+
+        async function loadPositions() {
+            try {
+                const res = await apiFetch('/api/positions');
+                const el = document.getElementById('pos');
+                if (res.length === 0) {
+                    el.innerHTML = '<div class="text-green-800">Nema otvorenih pozicija.</div>';
+                    return;
+                }
+                el.innerHTML = res.map(p => `
+                    <div class="flex justify-between items-center border border-green-800 p-2">
+                        <div>
+                            <div>${p.symbol} <span class="${p.side === 'buy' ? 'text-green-400' : 'text-red-400'}">${p.side.toUpperCase()}</span></div>
+                            <div class="text-[10px] text-green-700">Ulaz: $${p.entry_price} | SL: $${p.stop_loss} | TP: $${p.take_profit}</div>
+                        </div>
+                        <button onclick="closePos('${p.symbol}')" class="text-red-500 underline text-xs">CLOSE</button>
+                    </div>
+                `).join('');
+                clearError();
+            } catch (err) {
+                showError('Pozicije: ' + err.message);
+            }
+        }
+
+        async function loadTrades() {
+            try {
+                const trades = await apiFetch('/api/trades?limit=20');
+                const el = document.getElementById('tradeHistory');
+                if (trades.length === 0) {
+                    el.innerHTML = '<div class="p-2 text-green-800">Još nema zatvorenih trejdova.</div>';
+                    return;
+                }
+                el.innerHTML = trades.map(t => `
+                    <div class="flex justify-between p-2">
+                        <span>${t.symbol} <span class="text-green-700">${t.side}</span></span>
+                        <span class="text-green-700">${new Date(t.timestamp).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                        <span class="${pnlColor(t.realized_pnl)}">${fmtSigned(t.realized_pnl)}</span>
+                    </div>
+                `).join('');
+            } catch (err) {
+                showError('Povijest trejdova: ' + err.message);
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const s = await apiFetch('/api/stats');
+
+                document.getElementById('statPnl').textContent = fmtSigned(s.totalPnl);
+                document.getElementById('statPnl').className = 'text-lg ' + pnlColor(s.totalPnl);
+                document.getElementById('statWinRate').textContent = s.totalTrades > 0 ? `${s.winRate}%` : '--';
+                document.getElementById('statTotal').textContent = s.totalTrades;
+                document.getElementById('statWL').textContent = `${s.wins} / ${s.losses}`;
+                document.getElementById('statAvgWin').textContent = s.wins > 0 ? fmtSigned(s.avgWin) : '--';
+                document.getElementById('statAvgWin').className = 'text-sm text-green-400';
+                document.getElementById('statAvgLoss').textContent = s.losses > 0 ? fmtSigned(s.avgLoss) : '--';
+                document.getElementById('statAvgLoss').className = 'text-sm text-red-500';
+
+                if (s.equityCurve && s.equityCurve.length > 0) {
+                    const seen = new Set();
+                    const data = s.equityCurve
+                        .map(e => ({ time: Math.floor(new Date(e.timestamp).getTime() / 1000), value: e.cumulative_pnl }))
+                        .filter(e => {
+                            if (seen.has(e.time)) return false;
+                            seen.add(e.time);
+                            return true;
+                        })
+                        .sort((a, b) => a.time - b.time);
+                    equitySeries.setData(data);
+                }
+
+                const symEl = document.getElementById('bySymbol');
+                const symbols = Object.entries(s.bySymbol || {});
+                if (symbols.length === 0) {
+                    symEl.innerHTML = '<div class="p-2 text-green-800">Nema podataka.</div>';
+                } else {
+                    symEl.innerHTML = symbols
+                        .sort((a, b) => b[1].pnl - a[1].pnl)
+                        .map(([sym, d]) => `
+                            <div class="flex justify-between p-2">
+                                <span>${sym}</span>
+                                <span class="text-green-700">${d.trades} trejdova</span>
+                                <span class="${pnlColor(d.pnl)}">${fmtSigned(d.pnl)}</span>
+                            </div>
+                        `).join('');
+                }
+            } catch (err) {
+                showError('Statistika: ' + err.message);
+            }
+        }
+
+        async function refreshAll() {
+            await Promise.all([loadBalance(), loadPositions(), loadTrades(), loadStats()]);
+        }
+
+        // ---------- ACTIONS ----------
+        async function closePos(sym) {
+            try {
+                await apiFetch('/api/close-position', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol })
+                    body: JSON.stringify({ symbol: sym })
                 });
-                updateDashboard();
+                refreshAll();
+            } catch (err) {
+                alert('Greška pri zatvaranju pozicije: ' + err.message);
             }
         }
 
-        // Pokretanje
-        loadChartData();
-        updateDashboard();
-        setInterval(updateDashboard, 5000); 
-        setInterval(loadChartData, 60000); 
+        async function pause() {
+            try {
+                await apiFetch('/api/pause', { method: 'POST' });
+                alert('Bot pauziran - nove pozicije se neće otvarati, postojeće ostaju.');
+            } catch (err) {
+                alert('Greška: ' + err.message);
+            }
+        }
 
-        window.addEventListener('resize', () => {
-            chart.applyOptions({ width: document.getElementById('tv-chart').clientWidth });
-        });
+        async function emergencyStop() {
+            if (!confirm('Ovo će zatvoriti SVE otvorene pozicije po tržišnoj cijeni. Nastaviti?')) return;
+            try {
+                const res = await apiFetch('/api/emergency-stop', { method: 'POST' });
+                alert('Bot zaustavljen, pozicije zatvorene: ' + JSON.stringify(res.results));
+                refreshAll();
+            } catch (err) {
+                alert('Greška: ' + err.message);
+            }
+        }
+
+        // ---------- BOOT ----------
+        async function boot() {
+            initCharts();
+            try {
+                await loadPairs();
+                await refreshAll();
+                clearError();
+                setInterval(refreshAll, 5000);
+            } catch (err) {
+                showError('Inicijalizacija: ' + err.message);
+            }
+        }
+
+        if (API_KEY) {
+            // Već imamo spremljen ključ - probaj direktno, s fallbackom na login ako je nevažeći
+            document.getElementById('loginOverlay').classList.add('hidden');
+            boot().catch(() => {
+                document.getElementById('loginOverlay').classList.remove('hidden');
+            });
+        }
+        // inače ostaje login overlay vidljiv, čeka doLogin()
     </script>
 </body>
 </html>
