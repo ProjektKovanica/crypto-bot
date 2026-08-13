@@ -430,51 +430,12 @@
                 console.error('Unrealized PnL error:', err);
             }
         }
+
+        async function refreshAll() {
             try {
                 await Promise.all([loadBalance(), loadPositions(), loadUnrealizedPnl(), loadTrades(), loadStats(), loadSettings()]);
             } catch (e) {
                 console.error('Refresh error:', e);
-            }
-        }
-
-        // ---------- SETTINGS ----------
-        const SETTING_LABELS = {
-            RISK_PERCENT: 'Risk % po trejdu',
-            MAX_CONCURRENT_POSITIONS: 'Maks. otvorenih pozicija',
-            MAX_LEVERAGE: 'Maks. leverage',
-            LIQUIDATION_SAFETY_FACTOR: 'Safety factor (likvidacija)',
-            COOLDOWN_SECONDS: 'Cooldown između trejdova (s)'
-        };
-        const EDITABLE_KEYS = Object.keys(SETTING_LABELS);
-
-        async function loadSettings() {
-            try {
-                const s = await apiFetch('/api/settings');
-                const el = document.getElementById('settingsPanel');
-                el.innerHTML = EDITABLE_KEYS.map(key => `
-                    <div class="flex items-center justify-between gap-2">
-                        <label class="text-green-700 w-48 shrink-0">${SETTING_LABELS[key]}</label>
-                        <input id="setting_${key}" type="text" value="${s[key] ?? ''}"
-                            class="bg-black border border-green-900 p-1 w-24 text-green-400 outline-none focus:border-green-600 text-right" />
-                        <button onclick="saveSetting('${key}')" class="text-green-600 border border-green-800 px-2 py-1">SPREMI</button>
-                    </div>
-                `).join('');
-            } catch (err) {
-                console.error('Settings error:', err);
-            }
-        }
-
-        async function saveSetting(key) {
-            const val = document.getElementById('setting_' + key)?.value?.trim();
-            if (!val) return alert('Unesi vrijednost.');
-            try {
-                await apiFetch('/api/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key, value: val })
-                });
-            } catch (err) {
-                alert('Greška pri spremanju: ' + err.message);
             }
         }
 
@@ -595,7 +556,7 @@
             initCharts();
             try {
                 await loadPairs();
-                await Promise.all([refreshAll(), loadSettings()]);
+                await refreshAll();
                 clearError();
                 setInterval(refreshAll, 5000);
             } catch (err) {
