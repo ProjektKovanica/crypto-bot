@@ -489,6 +489,18 @@ app.get('/api/stats', (req, res) => {
   });
 });
 
+// API: daily PnL
+app.get('/api/daily-pnl', (req, res) => {
+  const rows = db.prepare(`
+    SELECT date(timestamp) as day, SUM(realized_pnl) as pnl, COUNT(*) as trades
+    FROM trades
+    GROUP BY date(timestamp)
+    ORDER BY day DESC
+    LIMIT 30
+  `).all();
+  res.json(rows.reverse());
+});
+
 // API: settings
 const EDITABLE_SETTINGS = [
   'RISK_PERCENT',

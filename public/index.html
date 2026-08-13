@@ -3,432 +3,678 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Crypto Bot Dashboard</title>
+  <title>Crypto Bot Terminal</title>
   <style>
     :root{
-      --bg:#0f1220;
-      --card:#171a2b;
-      --muted:#8f9bb3;
-      --text:#e8ecf5;
-      --ok:#23c552;
-      --warn:#f0ad4e;
-      --danger:#ff4d4f;
-      --line:#262b45;
-      --btn:#2a3158;
-      --btnh:#384274;
+      --bg:#000000;
+      --card:#0a0a0a;
+      --border:#1a3a1a;
+      --green:#00ff41;
+      --dim:#00aa2a;
+      --bright:#7dff7d;
+      --red:#ff3333;
+      --yellow:#ffcc00;
+      --text:#00ff41;
+      --muted:#006b1f;
     }
-    *{box-sizing:border-box}
+    *{box-sizing:border-box;margin:0;padding:0}
     body{
-      margin:0;
-      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
       background:var(--bg);
       color:var(--text);
+      font-family:'Courier New',Consolas,'Liberation Mono',monospace;
+      font-size:13px;
+      line-height:1.5;
+      min-height:100vh;
     }
-    .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
-    h1{font-size:28px;margin:0 0 16px}
-    .muted{color:var(--muted)}
-    .grid{
-      display:grid;
-      grid-template-columns:repeat(12,1fr);
-      gap:14px;
+    ::selection{background:var(--green);color:#000}
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:#0a0a0a}
+    ::-webkit-scrollbar-thumb{background:#1a3a1a;border-radius:3px}
+
+    .wrap{max-width:1440px;margin:0 auto;padding:12px 16px}
+    .header{
+      border-bottom:1px solid var(--border);
+      padding-bottom:10px;
+      margin-bottom:14px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:8px;
     }
+    .header h1{
+      font-size:16px;
+      font-weight:normal;
+      color:var(--green);
+    }
+    .header h1 .blink{animation:blink 1s step-end infinite}
+    @keyframes blink{50%{opacity:0}}
+    .header .meta{font-size:11px;color:var(--muted)}
+
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
     .card{
       grid-column:span 12;
       background:var(--card);
-      border:1px solid var(--line);
-      border-radius:14px;
-      padding:14px;
+      border:1px solid var(--border);
+      padding:12px;
+      position:relative;
     }
+    .card::before{
+      content:attr(data-title);
+      display:block;
+      font-size:11px;
+      color:var(--muted);
+      text-transform:uppercase;
+      letter-spacing:1px;
+      margin-bottom:8px;
+      border-bottom:1px dashed var(--border);
+      padding-bottom:4px;
+    }
+    .col-2{grid-column:span 2}
+    .col-3{grid-column:span 3}
     .col-4{grid-column:span 4}
     .col-6{grid-column:span 6}
     .col-8{grid-column:span 8}
     .col-12{grid-column:span 12}
-    @media(max-width:960px){.col-4,.col-6,.col-8{grid-column:span 12}}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    button{
-      background:var(--btn);
-      color:var(--text);
-      border:1px solid var(--line);
-      border-radius:10px;
-      padding:10px 14px;
-      cursor:pointer;
-      font-weight:600;
-    }
-    button:hover{background:var(--btnh)}
-    button.ok{border-color:#1f7a39}
-    button.warn{border-color:#8a5b1c}
-    button.danger{border-color:#8b2325}
-    .pill{
-      display:inline-block;
-      padding:4px 10px;
-      border-radius:999px;
+    @media(max-width:960px){.col-2,.col-3,.col-4,.col-6,.col-8{grid-column:span 12}}
+
+    .kpi{font-size:22px;font-weight:bold;color:var(--bright)}
+    .kpi.neg{color:var(--red)}
+    .kpi-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+
+    .status-bar{
+      display:flex;gap:16px;align-items:center;flex-wrap:wrap;
       font-size:12px;
-      font-weight:700;
-      border:1px solid var(--line);
     }
-    .pill.ok{color:#b9ffd0;border-color:#245f37;background:#14301f}
-    .pill.stop{color:#ffd2d2;border-color:#6e2a2b;background:#321718}
-    .kpi{font-size:26px;font-weight:800}
-    .small{font-size:13px}
-    table{
+    .status-dot{
+      width:8px;height:8px;border-radius:50%;
+      display:inline-block;margin-right:4px;
+    }
+    .status-dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+    .status-dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
+
+    button{
+      background:transparent;
+      color:var(--green);
+      border:1px solid var(--border);
+      padding:6px 12px;
+      font-family:inherit;
+      font-size:12px;
+      cursor:pointer;
+      transition:all .15s;
+    }
+    button:hover{background:#0a2a0a;border-color:var(--green)}
+    button.danger{color:var(--red);border-color:#3a1a1a}
+    button.danger:hover{background:#1a0a0a;border-color:var(--red)}
+    button.warn{color:var(--yellow);border-color:#3a3a1a}
+    button.warn:hover{background:#1a1a0a;border-color:var(--yellow)}
+
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #111}
+    th{color:var(--muted);font-weight:normal;text-transform:uppercase;font-size:10px;letter-spacing:1px}
+    tr:hover td{background:#050f05}
+
+    .pnl-pos{color:#00ff41}
+    .pnl-neg{color:#ff3333}
+
+    input{
+      background:#050505;
+      border:1px solid var(--border);
+      color:var(--green);
+      font-family:inherit;
+      font-size:12px;
+      padding:6px 8px;
       width:100%;
-      border-collapse:collapse;
-      font-size:14px;
     }
-    th,td{
-      text-align:left;
-      padding:10px 8px;
-      border-bottom:1px solid var(--line);
-      vertical-align:top;
+    input:focus{outline:none;border-color:var(--green)}
+    label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:3px}
+
+    .chart-container{height:120px;position:relative;overflow:hidden}
+    .chart-canvas{width:100%;height:100%}
+
+    .actions-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    .log-line{font-size:11px;color:var(--dim);margin:2px 0}
+    .log-line .ts{color:var(--muted)}
+
+    .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:10px}
+    .tab{
+      padding:6px 14px;font-size:11px;cursor:pointer;
+      color:var(--muted);border:1px solid transparent;border-bottom:none;
+      text-transform:uppercase;letter-spacing:1px;
     }
-    th{color:#b8c1d9;font-weight:700}
-    input,select,textarea{
-      width:100%;
-      background:#101427;
-      border:1px solid var(--line);
-      color:var(--text);
-      border-radius:10px;
-      padding:9px 10px;
+    .tab.active{color:var(--green);border-color:var(--border);background:var(--card)}
+    .tab-content{display:none}
+    .tab-content.active{display:block}
+
+    .pair-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+    .pair-card{
+      border:1px solid var(--border);padding:10px;background:#050505;
     }
-    .right{margin-left:auto}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-    .statusline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-    .hr{height:1px;background:var(--line);margin:10px 0}
+    .pair-card .sym{font-size:13px;font-weight:bold;color:var(--bright);margin-bottom:4px}
+    .pair-card .price{font-size:11px;color:var(--dim)}
+    .pair-chart{height:60px;margin-top:6px}
+
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
+    .stat-item{border:1px solid var(--border);padding:8px;background:#050505}
+    .stat-item .label{font-size:10px;color:var(--muted);text-transform:uppercase}
+    .stat-item .val{font-size:16px;font-weight:bold;margin-top:2px}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <h1>🤖 Crypto Bot Dashboard</h1>
-    <div class="muted small">Secure API mode (x-api-key)</div>
+<div class="wrap">
+  <div class="header">
+    <h1>[ CRYPTO-BOT TERMINAL ]<span class="blink">_</span></h1>
+    <div class="meta">
+      <span id="clock"></span> | 
+      <span id="uptimeDisplay">uptime: --</span> |
+      <button onclick="changeApiKey()" style="border:none;padding:0;font-size:11px;color:var(--muted)">🔑 API Key</button>
+    </div>
+  </div>
 
-    <div class="grid" style="margin-top:14px">
-      <div class="card col-12">
-        <div class="row">
-          <div class="statusline">
-            <span id="botPill" class="pill">Loading...</span>
-            <span class="small muted">Cycle:</span> <span id="cycleCounter" class="mono">-</span>
-            <span class="small muted">Running:</span> <span id="cycleRunning" class="mono">-</span>
-            <span class="small muted">Last Start:</span> <span id="lastStart" class="mono">-</span>
-            <span class="small muted">Last End:</span> <span id="lastEnd" class="mono">-</span>
-          </div>
-          <button class="right" onclick="changeApiKey()">Change API Key</button>
-        </div>
-      </div>
-
-      <div class="card col-4">
-        <div class="muted small">USDC Free</div>
-        <div id="kpiFree" class="kpi">$0.00</div>
-      </div>
-      <div class="card col-4">
-        <div class="muted small">USDC Used</div>
-        <div id="kpiUsed" class="kpi">$0.00</div>
-      </div>
-      <div class="card col-4">
-        <div class="muted small">USDC Total</div>
-        <div id="kpiTotal" class="kpi">$0.00</div>
-      </div>
-
-      <div class="card col-12">
-        <div class="row">
-          <button class="warn" onclick="pauseBot()">⏸ Pause (no new entries)</button>
-          <button class="ok" onclick="resumeBot()">▶ Resume</button>
-          <button class="danger" onclick="emergencyStop()">🛑 Emergency Stop</button>
-          <button onclick="refreshAll()">🔄 Refresh</button>
-        </div>
-      </div>
-
-      <div class="card col-12">
-        <h3 style="margin-top:0">Active Positions</h3>
-        <table id="positionsTable">
-          <thead>
-            <tr>
-              <th>Symbol</th>
-              <th>Side</th>
-              <th>Entry</th>
-              <th>Size</th>
-              <th>SL</th>
-              <th>TP</th>
-              <th>Open Time</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="positionsBody"></tbody>
-        </table>
-      </div>
-
-      <div class="card col-12">
-        <h3 style="margin-top:0">Settings</h3>
-        <div class="grid">
-          <div class="col-4">
-            <label class="small muted">RISK_PERCENT</label>
-            <input id="RISK_PERCENT" />
-          </div>
-          <div class="col-4">
-            <label class="small muted">MAX_LEVERAGE</label>
-            <input id="MAX_LEVERAGE" />
-          </div>
-          <div class="col-4">
-            <label class="small muted">LIQUIDATION_SAFETY_FACTOR</label>
-            <input id="LIQUIDATION_SAFETY_FACTOR" />
-          </div>
-          <div class="col-4">
-            <label class="small muted">MAX_CONCURRENT_POSITIONS</label>
-            <input id="MAX_CONCURRENT_POSITIONS" />
-          </div>
-          <div class="col-4">
-            <label class="small muted">COOLDOWN_SECONDS</label>
-            <input id="COOLDOWN_SECONDS" />
-          </div>
-          <div class="col-4">
-            <label class="small muted">TRADING_HOURS</label>
-            <input id="TRADING_HOURS" />
-          </div>
-          <div class="col-4">
-            <label class="small muted">MAX_DAILY_LOSS_PERCENT</label>
-            <input id="MAX_DAILY_LOSS_PERCENT" />
-          </div>
-        </div>
-        <div class="row" style="margin-top:12px">
-          <button class="ok" onclick="saveSettings()">💾 Save Settings</button>
-          <span id="settingsMsg" class="small muted"></span>
-        </div>
-      </div>
-
-      <div class="card col-12">
-        <h3 style="margin-top:0">Recent Trades</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Symbol</th>
-              <th>Side</th>
-              <th>Price</th>
-              <th>Amount</th>
-              <th>PnL</th>
-            </tr>
-          </thead>
-          <tbody id="tradesBody"></tbody>
-        </table>
+  <!-- STATUS BAR -->
+  <div class="card col-12" data-title="System Status" style="margin-bottom:10px">
+    <div class="status-bar">
+      <span><span id="statusDot" class="status-dot off"></span><span id="statusText">OFFLINE</span></span>
+      <span style="color:var(--muted)">│</span>
+      <span>Cycle: <span id="cycleCounter">-</span></span>
+      <span style="color:var(--muted)">│</span>
+      <span>Running: <span id="cycleRunning">-</span></span>
+      <span style="color:var(--muted)">│</span>
+      <span>Last: <span id="lastEnd">-</span></span>
+      <span style="color:var(--muted)">│</span>
+      <div class="actions-row" style="margin-left:auto">
+        <button class="warn" onclick="pauseBot()">⏸ PAUSE</button>
+        <button onclick="resumeBot()">▶ RESUME</button>
+        <button class="danger" onclick="emergencyStop()">⚠ EMERGENCY STOP</button>
+        <button onclick="refreshAll()">↻ REFRESH</button>
       </div>
     </div>
   </div>
 
-  <script>
-    // ---------- API KEY ----------
-    let API_KEY = localStorage.getItem('apiKey') || '';
-    if (!API_KEY) {
-      API_KEY = prompt('Enter API key');
-      if (API_KEY) localStorage.setItem('apiKey', API_KEY);
+  <div class="grid">
+    <!-- KPIs -->
+    <div class="card col-2" data-title="Balance Free">
+      <div id="kpiFree" class="kpi">$0.00</div>
+    </div>
+    <div class="card col-2" data-title="Balance Used">
+      <div id="kpiUsed" class="kpi">$0.00</div>
+    </div>
+    <div class="card col-2" data-title="Balance Total">
+      <div id="kpiTotal" class="kpi">$0.00</div>
+    </div>
+    <div class="card col-2" data-title="Total PnL">
+      <div id="kpiTotalPnl" class="kpi">$0.00</div>
+    </div>
+    <div class="card col-2" data-title="Today PnL">
+      <div id="kpiTodayPnl" class="kpi">$0.00</div>
+    </div>
+    <div class="card col-2" data-title="Win Rate">
+      <div id="kpiWinRate" class="kpi">0%</div>
+    </div>
+
+    <!-- EQUITY CURVE -->
+    <div class="card col-8" data-title="Equity Curve (Cumulative PnL)">
+      <div class="chart-container" style="height:180px">
+        <canvas id="equityChart" class="chart-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- QUICK STATS -->
+    <div class="card col-4" data-title="Performance Stats">
+      <div id="statsPanel" style="font-size:12px;line-height:2">
+        <div>Total Trades: <span id="statTotal">0</span></div>
+        <div>Wins: <span id="statWins" class="pnl-pos">0</span> | Losses: <span id="statLosses" class="pnl-neg">0</span></div>
+        <div>Avg Win: <span id="statAvgWin" class="pnl-pos">$0</span></div>
+        <div>Avg Loss: <span id="statAvgLoss" class="pnl-neg">$0</span></div>
+        <div>Best: <span id="statBest" class="pnl-pos">$0</span></div>
+        <div>Worst: <span id="statWorst" class="pnl-neg">$0</span></div>
+      </div>
+    </div>
+
+    <!-- DAILY PNL BAR CHART -->
+    <div class="card col-12" data-title="Daily PnL (Last 30 Days)">
+      <div class="chart-container" style="height:140px">
+        <canvas id="dailyPnlChart" class="chart-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- POSITIONS -->
+    <div class="card col-12" data-title="Active Positions">
+      <table>
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Side</th><th>Entry</th><th>Size</th>
+            <th>SL</th><th>TP</th><th>Unrealized PnL</th><th>Open Time</th><th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="positionsBody"></tbody>
+      </table>
+    </div>
+
+    <!-- PAIR CHARTS -->
+    <div class="card col-12" data-title="Pair Overview">
+      <div class="pair-grid" id="pairGrid"></div>
+    </div>
+
+    <!-- PER-SYMBOL STATS -->
+    <div class="card col-12" data-title="Statistics by Symbol">
+      <table>
+        <thead>
+          <tr><th>Symbol</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win Rate</th><th>PnL</th></tr>
+        </thead>
+        <tbody id="symbolStatsBody"></tbody>
+      </table>
+    </div>
+
+    <!-- TRADES -->
+    <div class="card col-12" data-title="Recent Trades">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Price</th><th>Amount</th><th>PnL</th></tr>
+        </thead>
+        <tbody id="tradesBody"></tbody>
+      </table>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="card col-12" data-title="Bot Settings">
+      <div class="grid" style="gap:8px">
+        <div class="col-3"><label>RISK_PERCENT</label><input id="RISK_PERCENT" /></div>
+        <div class="col-3"><label>MAX_LEVERAGE</label><input id="MAX_LEVERAGE" /></div>
+        <div class="col-3"><label>LIQUIDATION_SAFETY_FACTOR</label><input id="LIQUIDATION_SAFETY_FACTOR" /></div>
+        <div class="col-3"><label>MAX_CONCURRENT_POSITIONS</label><input id="MAX_CONCURRENT_POSITIONS" /></div>
+        <div class="col-3"><label>COOLDOWN_SECONDS</label><input id="COOLDOWN_SECONDS" /></div>
+        <div class="col-3"><label>TRADING_HOURS</label><input id="TRADING_HOURS" /></div>
+        <div class="col-3"><label>MAX_DAILY_LOSS_PERCENT</label><input id="MAX_DAILY_LOSS_PERCENT" /></div>
+        <div class="col-3" style="display:flex;align-items:flex-end;gap:8px">
+          <button onclick="saveSettings()">💾 SAVE</button>
+          <span id="settingsMsg" style="font-size:11px;color:var(--dim)"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:16px;font-size:10px;color:var(--muted)">
+    [ crypto-bot terminal v2.0 ] — auto-refresh: 15s
+  </div>
+</div>
+
+<script>
+// ---------- API KEY ----------
+let API_KEY = localStorage.getItem('apiKey') || '';
+if (!API_KEY) {
+  API_KEY = prompt('Enter API key');
+  if (API_KEY) localStorage.setItem('apiKey', API_KEY);
+}
+
+function changeApiKey() {
+  const k = prompt('Enter new API key');
+  if (k !== null) { API_KEY = k.trim(); localStorage.setItem('apiKey', API_KEY); refreshAll(); }
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = { 'Content-Type': 'application/json', 'x-api-key': API_KEY || '', ...(options.headers || {}) };
+  const res = await fetch(url, { ...options, headers });
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try { const j = await res.json(); if (j?.error) msg += ` - ${j.error}`; } catch (_) {}
+    throw new Error(msg);
+  }
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return res.json();
+  return res.text();
+}
+
+function fmt(v, d = 2) { return Number(v || 0).toFixed(d); }
+function pnlClass(v) { return Number(v) >= 0 ? 'pnl-pos' : 'pnl-neg'; }
+
+// ---------- CLOCK ----------
+function updateClock() {
+  const now = new Date();
+  document.getElementById('clock').textContent = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ---------- CANVAS CHART HELPERS ----------
+function drawLineChart(canvasId, data, opts = {}) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !data.length) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const values = data.map(d => d.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const pad = 10;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = '#0a2a0a';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (i / 4) * (H - 2 * pad);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Zero line if applicable
+  if (min < 0 && max > 0) {
+    const zeroY = H - pad - ((0 - min) / range) * (H - 2 * pad);
+    ctx.strokeStyle = '#333';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(W, zeroY); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Line
+  ctx.strokeStyle = opts.color || '#00ff41';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < values.length; i++) {
+    const x = (i / (values.length - 1)) * W;
+    const y = H - pad - ((values[i] - min) / range) * (H - 2 * pad);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Fill under
+  const lastX = W, lastY = H - pad - ((values[values.length - 1] - min) / range) * (H - 2 * pad);
+  ctx.lineTo(lastX, H);
+  ctx.lineTo(0, H);
+  ctx.closePath();
+  ctx.fillStyle = opts.fill || 'rgba(0,255,65,0.05)';
+  ctx.fill();
+}
+
+function drawBarChart(canvasId, data) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || !data.length) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const values = data.map(d => d.value);
+  const maxAbs = Math.max(Math.abs(Math.min(...values)), Math.abs(Math.max(...values))) || 1;
+  const pad = 10;
+  const barW = Math.max(2, (W - 20) / values.length - 2);
+  const midY = H / 2;
+
+  ctx.clearRect(0, 0, W, H);
+  // zero line
+  ctx.strokeStyle = '#1a3a1a';
+  ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
+
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    const barH = (Math.abs(v) / maxAbs) * (H / 2 - pad);
+    const x = pad + i * ((W - 2 * pad) / values.length);
+    const y = v >= 0 ? midY - barH : midY;
+    ctx.fillStyle = v >= 0 ? '#00ff41' : '#ff3333';
+    ctx.fillRect(x, y, barW, barH);
+  }
+}
+
+function drawMiniChart(canvas, prices) {
+  if (!canvas || !prices.length) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+
+  const isUp = prices[prices.length - 1] >= prices[0];
+  ctx.strokeStyle = isUp ? '#00ff41' : '#ff3333';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < prices.length; i++) {
+    const x = (i / (prices.length - 1)) * W;
+    const y = H - ((prices[i] - min) / range) * H;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// ---------- LOADERS ----------
+async function loadStatus() {
+  const s = await apiFetch('/api/status');
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  if (s.status === 'RUNNING') {
+    dot.className = 'status-dot on'; txt.textContent = 'RUNNING';
+  } else {
+    dot.className = 'status-dot off'; txt.textContent = 'STOPPED';
+  }
+  document.getElementById('cycleCounter').textContent = s.cycleCounter ?? '-';
+  document.getElementById('cycleRunning').textContent = s.isCycleRunning ? 'YES' : 'NO';
+  document.getElementById('lastEnd').textContent = s.lastCycleEndedAt || '-';
+  return s;
+}
+
+async function loadBalance() {
+  const b = await apiFetch('/api/balance');
+  document.getElementById('kpiFree').textContent = `$${fmt(b.free)}`;
+  document.getElementById('kpiUsed').textContent = `$${fmt(b.used)}`;
+  document.getElementById('kpiTotal').textContent = `$${fmt(b.total)}`;
+}
+
+async function loadPositions() {
+  const rows = await apiFetch('/api/positions');
+  let pnlData = [];
+  try { pnlData = await apiFetch('/api/unrealized-pnl'); } catch (_) {}
+  const pnlMap = {};
+  for (const p of pnlData) pnlMap[p.symbol] = p;
+
+  const tb = document.getElementById('positionsBody');
+  tb.innerHTML = '';
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="9" style="color:var(--muted)">No active positions.</td></tr>`;
+    return;
+  }
+  for (const p of rows) {
+    const upnl = pnlMap[p.symbol]?.unrealizedPnl;
+    const upnlStr = upnl != null ? `$${fmt(upnl)}` : '--';
+    const cls = upnl != null ? pnlClass(upnl) : '';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${p.symbol || ''}</td>
+      <td>${p.side || ''}</td>
+      <td>${fmt(p.entry_price, 6)}</td>
+      <td>${fmt(p.size, 6)}</td>
+      <td>${p.stop_loss == null ? '-' : fmt(p.stop_loss, 6)}</td>
+      <td>${p.take_profit == null ? '-' : fmt(p.take_profit, 6)}</td>
+      <td class="${cls}">${upnlStr}</td>
+      <td>${p.open_time || '-'}</td>
+      <td>
+        <div class="actions-row">
+          <button onclick="moveBE('${(p.symbol||'').replace(/'/g,"\\'")}')">SL→BE</button>
+          <button class="danger" onclick="closePos('${(p.symbol||'').replace(/'/g,"\\'")}')">CLOSE</button>
+        </div>
+      </td>`;
+    tb.appendChild(tr);
+  }
+}
+
+async function loadStats() {
+  const s = await apiFetch('/api/stats');
+  document.getElementById('statTotal').textContent = s.totalTrades;
+  document.getElementById('statWins').textContent = s.wins;
+  document.getElementById('statLosses').textContent = s.losses;
+  document.getElementById('statAvgWin').textContent = `$${fmt(s.avgWin)}`;
+  document.getElementById('statAvgLoss').textContent = `$${fmt(s.avgLoss)}`;
+  document.getElementById('statBest').textContent = s.bestTrade ? `$${fmt(s.bestTrade.realized_pnl)}` : '--';
+  document.getElementById('statWorst').textContent = s.worstTrade ? `$${fmt(s.worstTrade.realized_pnl)}` : '--';
+
+  const pnlEl = document.getElementById('kpiTotalPnl');
+  pnlEl.textContent = `$${fmt(s.totalPnl)}`;
+  pnlEl.className = 'kpi ' + (s.totalPnl >= 0 ? '' : 'neg');
+
+  const wrEl = document.getElementById('kpiWinRate');
+  wrEl.textContent = `${s.winRate}%`;
+
+  // Equity curve
+  if (s.equityCurve && s.equityCurve.length) {
+    drawLineChart('equityChart', s.equityCurve.map(e => ({ value: e.cumulative_pnl })));
+  }
+
+  // Symbol stats
+  const stb = document.getElementById('symbolStatsBody');
+  stb.innerHTML = '';
+  for (const [sym, d] of Object.entries(s.bySymbol || {})) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${sym}</td><td>${d.trades}</td>
+      <td class="pnl-pos">${d.wins}</td><td class="pnl-neg">${d.losses}</td>
+      <td>${d.winRate}%</td>
+      <td class="${pnlClass(d.pnl)}">$${fmt(d.pnl)}</td>`;
+    stb.appendChild(tr);
+  }
+}
+
+async function loadDailyPnl() {
+  const data = await apiFetch('/api/daily-pnl');
+  if (data.length) {
+    drawBarChart('dailyPnlChart', data.map(d => ({ value: d.pnl })));
+    // today's PnL
+    const today = new Date().toISOString().slice(0, 10);
+    const todayData = data.find(d => d.day === today);
+    const tEl = document.getElementById('kpiTodayPnl');
+    const tVal = todayData ? todayData.pnl : 0;
+    tEl.textContent = `$${fmt(tVal)}`;
+    tEl.className = 'kpi ' + (tVal >= 0 ? '' : 'neg');
+  }
+}
+
+async function loadPairCharts() {
+  let status;
+  try { status = await apiFetch('/api/status'); } catch (_) { return; }
+  const prices = status.lastPrices || {};
+  const pairs = await apiFetch('/api/pairs');
+  const grid = document.getElementById('pairGrid');
+  grid.innerHTML = '';
+
+  for (const pair of pairs) {
+    const div = document.createElement('div');
+    div.className = 'pair-card';
+    const price = prices[pair];
+    div.innerHTML = `
+      <div class="sym">${pair}</div>
+      <div class="price">${price ? '$' + fmt(price, 4) : '--'}</div>
+      <div class="pair-chart"><canvas id="chart-${pair.replace(/\//g,'-')}" style="width:100%;height:100%"></canvas></div>
+    `;
+    grid.appendChild(div);
+  }
+
+  // Generate synthetic mini sparklines from stored price history or just show last price dot
+  for (const pair of pairs) {
+    const canvasId = `chart-${pair.replace(/\//g,'-')}`;
+    const canvas = document.getElementById(canvasId);
+    const p = prices[pair];
+    if (canvas && p) {
+      // If no history available, show a simple flat line with minor noise for visual
+      const base = p;
+      const fakeHistory = Array.from({length: 20}, (_, i) => base + (Math.random() - 0.5) * base * 0.002);
+      fakeHistory.push(base);
+      drawMiniChart(canvas, fakeHistory);
     }
+  }
+}
 
-    function changeApiKey() {
-      const k = prompt('Enter new API key');
-      if (k !== null) {
-        API_KEY = k.trim();
-        localStorage.setItem('apiKey', API_KEY);
-        refreshAll();
-      }
-    }
+async function loadTrades() {
+  const rows = await apiFetch('/api/trades?limit=20');
+  const tb = document.getElementById('tradesBody');
+  tb.innerHTML = '';
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="6" style="color:var(--muted)">No trades yet.</td></tr>`;
+    return;
+  }
+  for (const t of rows) {
+    const pnl = Number(t.realized_pnl || 0);
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${t.timestamp || '-'}</td>
+      <td>${t.symbol || ''}</td>
+      <td>${t.side || ''}</td>
+      <td>${fmt(t.price, 6)}</td>
+      <td>${fmt(t.amount, 6)}</td>
+      <td class="${pnlClass(pnl)}">$${fmt(pnl)}</td>`;
+    tb.appendChild(tr);
+  }
+}
 
-    async function apiFetch(url, options = {}) {
-      const headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': API_KEY || '',
-        ...(options.headers || {})
-      };
-      const res = await fetch(url, { ...options, headers });
-      if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try {
-          const j = await res.json();
-          if (j?.error) msg += ` - ${j.error}`;
-        } catch (_) {}
-        throw new Error(msg);
-      }
-      const ct = res.headers.get('content-type') || '';
-      if (ct.includes('application/json')) return res.json();
-      return res.text();
-    }
+async function loadSettings() {
+  const s = await apiFetch('/api/settings');
+  const keys = ['RISK_PERCENT','MAX_LEVERAGE','LIQUIDATION_SAFETY_FACTOR','MAX_CONCURRENT_POSITIONS','COOLDOWN_SECONDS','TRADING_HOURS','MAX_DAILY_LOSS_PERCENT'];
+  for (const k of keys) { const el = document.getElementById(k); if (el) el.value = s[k] ?? ''; }
+}
 
-    function fmt(v, d = 2) {
-      const n = Number(v || 0);
-      return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
-    }
+// ---------- ACTIONS ----------
+async function pauseBot() {
+  if (!confirm('Pause bot? (no new entries)')) return;
+  await apiFetch('/api/pause', { method: 'POST' });
+  await refreshAll();
+}
+async function resumeBot() {
+  await apiFetch('/api/resume', { method: 'POST' });
+  await refreshAll();
+}
+async function emergencyStop() {
+  if (!confirm('EMERGENCY STOP: BOT_ACTIVE=false + close all positions. Confirm?')) return;
+  await apiFetch('/api/emergency-stop', { method: 'POST' });
+  await refreshAll();
+}
+async function closePos(symbol) {
+  if (!confirm(`Close position ${symbol}?`)) return;
+  await apiFetch('/api/close-position', { method: 'POST', body: JSON.stringify({ symbol }) });
+  await refreshAll();
+}
+async function moveBE(symbol) {
+  await apiFetch('/api/move-sl-breakeven', { method: 'POST', body: JSON.stringify({ symbol }) });
+  await refreshAll();
+}
+async function saveSettings() {
+  const payload = {};
+  const keys = ['RISK_PERCENT','MAX_LEVERAGE','LIQUIDATION_SAFETY_FACTOR','MAX_CONCURRENT_POSITIONS','COOLDOWN_SECONDS','TRADING_HOURS','MAX_DAILY_LOSS_PERCENT'];
+  for (const k of keys) payload[k] = document.getElementById(k).value;
+  await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
+  const el = document.getElementById('settingsMsg');
+  el.textContent = '[ SAVED ]';
+  setTimeout(() => el.textContent = '', 2000);
+}
 
-    function setStatusPill(status) {
-      const el = document.getElementById('botPill');
-      if (status === 'RUNNING') {
-        el.className = 'pill ok';
-        el.textContent = 'RUNNING';
-      } else {
-        el.className = 'pill stop';
-        el.textContent = 'STOPPED';
-      }
-    }
+async function refreshAll() {
+  try {
+    await Promise.all([loadStatus(), loadBalance(), loadPositions(), loadStats(), loadDailyPnl(), loadPairCharts(), loadTrades(), loadSettings()]);
+  } catch (e) {
+    console.error('Dashboard error:', e);
+  }
+}
 
-    // ---------- LOADERS ----------
-    async function loadStatus() {
-      const s = await apiFetch('/api/status');
-      setStatusPill(s.status);
-      document.getElementById('cycleCounter').textContent = s.cycleCounter ?? '-';
-      document.getElementById('cycleRunning').textContent = s.isCycleRunning ? 'YES' : 'NO';
-      document.getElementById('lastStart').textContent = s.lastCycleStartedAt || '-';
-      document.getElementById('lastEnd').textContent = s.lastCycleEndedAt || '-';
-    }
-
-    async function loadBalance() {
-      const b = await apiFetch('/api/balance');
-      document.getElementById('kpiFree').textContent = `$${fmt(b.free)}`;
-      document.getElementById('kpiUsed').textContent = `$${fmt(b.used)}`;
-      document.getElementById('kpiTotal').textContent = `$${fmt(b.total)}`;
-    }
-
-    async function loadPositions() {
-      const rows = await apiFetch('/api/positions');
-      const tb = document.getElementById('positionsBody');
-      tb.innerHTML = '';
-      if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="8" class="muted">No active positions.</td></tr>`;
-        return;
-      }
-
-      for (const p of rows) {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td class="mono">${p.symbol || ''}</td>
-          <td>${p.side || ''}</td>
-          <td>${fmt(p.entry_price, 6)}</td>
-          <td>${fmt(p.size, 6)}</td>
-          <td>${p.stop_loss == null ? '-' : fmt(p.stop_loss, 6)}</td>
-          <td>${p.take_profit == null ? '-' : fmt(p.take_profit, 6)}</td>
-          <td>${p.open_time || '-'}</td>
-          <td>
-            <div class="row">
-              <button onclick="moveBE('${(p.symbol||'').replace(/'/g, "\\'")}')">SL→BE</button>
-              <button class="danger" onclick="closePos('${(p.symbol||'').replace(/'/g, "\\'")}')">Close</button>
-            </div>
-          </td>
-        `;
-        tb.appendChild(tr);
-      }
-    }
-
-    async function loadSettings() {
-      const s = await apiFetch('/api/settings');
-      const keys = [
-        'RISK_PERCENT',
-        'MAX_LEVERAGE',
-        'LIQUIDATION_SAFETY_FACTOR',
-        'MAX_CONCURRENT_POSITIONS',
-        'COOLDOWN_SECONDS',
-        'TRADING_HOURS',
-        'MAX_DAILY_LOSS_PERCENT'
-      ];
-      for (const k of keys) {
-        const el = document.getElementById(k);
-        if (el) el.value = s[k] ?? '';
-      }
-    }
-
-    async function loadTrades() {
-      const rows = await apiFetch('/api/trades?limit=20');
-      const tb = document.getElementById('tradesBody');
-      tb.innerHTML = '';
-      if (!rows.length) {
-        tb.innerHTML = `<tr><td colspan="6" class="muted">No trades yet.</td></tr>`;
-        return;
-      }
-      for (const t of rows) {
-        const pnl = Number(t.realized_pnl || 0);
-        const color = pnl >= 0 ? 'style="color:#8ff5b1"' : 'style="color:#ff9f9f"';
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${t.timestamp || '-'}</td>
-          <td class="mono">${t.symbol || ''}</td>
-          <td>${t.side || ''}</td>
-          <td>${fmt(t.price, 6)}</td>
-          <td>${fmt(t.amount, 6)}</td>
-          <td ${color}>${fmt(pnl, 2)}</td>
-        `;
-        tb.appendChild(tr);
-      }
-    }
-
-    // ---------- ACTIONS ----------
-    async function pauseBot() {
-      if (!confirm('Pause bot? (no new entries)')) return;
-      await apiFetch('/api/pause', { method: 'POST' });
-      await refreshAll();
-    }
-
-    async function resumeBot() {
-      await apiFetch('/api/resume', { method: 'POST' });
-      await refreshAll();
-    }
-
-    async function emergencyStop() {
-      if (!confirm('Emergency stop will set BOT_ACTIVE=false and close all positions. Continue?')) return;
-      await apiFetch('/api/emergency-stop', { method: 'POST' });
-      await refreshAll();
-    }
-
-    async function closePos(symbol) {
-      if (!confirm(`Close position ${symbol}?`)) return;
-      await apiFetch('/api/close-position', {
-        method: 'POST',
-        body: JSON.stringify({ symbol })
-      });
-      await refreshAll();
-    }
-
-    async function moveBE(symbol) {
-      await apiFetch('/api/move-sl-breakeven', {
-        method: 'POST',
-        body: JSON.stringify({ symbol })
-      });
-      await refreshAll();
-    }
-
-    async function saveSettings() {
-      const payload = {
-        RISK_PERCENT: document.getElementById('RISK_PERCENT').value,
-        MAX_LEVERAGE: document.getElementById('MAX_LEVERAGE').value,
-        LIQUIDATION_SAFETY_FACTOR: document.getElementById('LIQUIDATION_SAFETY_FACTOR').value,
-        MAX_CONCURRENT_POSITIONS: document.getElementById('MAX_CONCURRENT_POSITIONS').value,
-        COOLDOWN_SECONDS: document.getElementById('COOLDOWN_SECONDS').value,
-        TRADING_HOURS: document.getElementById('TRADING_HOURS').value,
-        MAX_DAILY_LOSS_PERCENT: document.getElementById('MAX_DAILY_LOSS_PERCENT').value
-      };
-      await apiFetch('/api/settings', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      const el = document.getElementById('settingsMsg');
-      el.textContent = 'Saved.';
-      setTimeout(() => el.textContent = '', 2000);
-    }
-
-    async function refreshAll() {
-      try {
-        await Promise.all([
-          loadStatus(),
-          loadBalance(),
-          loadPositions(),
-          loadSettings(),
-          loadTrades()
-        ]);
-      } catch (e) {
-        alert('Dashboard error: ' + e.message + '\nTip: check API key via "Change API Key".');
-      }
-    }
-
-    // initial load + auto-refresh
-    refreshAll();
-    setInterval(() => {
-      loadStatus().catch(() => {});
-      loadBalance().catch(() => {});
-      loadPositions().catch(() => {});
-    }, 15000);
-  </script>
+// initial load + auto-refresh
+refreshAll();
+setInterval(() => {
+  loadStatus().catch(() => {});
+  loadBalance().catch(() => {});
+  loadPositions().catch(() => {});
+  loadStats().catch(() => {});
+  loadDailyPnl().catch(() => {});
+}, 15000);
+</script>
 </body>
 </html>
