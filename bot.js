@@ -22,6 +22,53 @@ const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC
 let isCycleRunning = false;
 let cycleCounter = 0;
 
+function getUsdcAvailableBalance(balance) {
+    // 1) USDⓈ-M futures specifično: info.assets[*].availableBalance
+    // Kod nekih account konfiguracija CCXT mapira USDC.free=0, ali availableBalance postoji.
+    try {
+        const assets = balance?.info?.assets;
+        if (Array.isArray(assets) && assets.length > 0) {
+            // Prioritet USDC asset, zatim 'U' (USDⓈ agregat)
+            const usdcAsset = assets.find(a => String(a.asset).toUpperCase() === 'USDC');
+            if (usdcAsset && usdcAsset.availableBalance != null) {
+                const v = Number(usdcAsset.availableBalance);
+                if (Number.isFinite(v) && v > 0) return { value: v, source: 'info.assets.USDC.availableBalance' };
+            }
+
+            const usdSMAsset = assets.find(a => String(a.asset).toUpperCase() === 'U');
+            if (usdSMAsset && usdSMAsset.availableBalance != null) {
+                const v = Number(usdSMAsset.availableBalance);
+                if (Number.isFinite(v) && v > 0) return { value: v, source: 'info.assets.U.availableBalance' };
+            }
+        }
+    } catch (_) {}
+
+    // 2) CCXT unified free map
+    const freeUsdcMap = Number(balance?.free?.USDC);
+    if (Number.isFinite(freeUsdcMap) && freeUsdcMap > 0) {
+        return { value: freeUsdcMap, source: 'free.USDC' };
+    }
+
+    // 3) CCXT coin object
+    const freeUsdcObj = Number(balance?.USDC?.free);
+    if (Number.isFinite(freeUsdcObj) && freeUsdcObj > 0) {
+        return { value: freeUsdcObj, source: 'USDC.free' };
+    }
+
+    // 4) fallback total (zadnje utočište za dijagnostiku)
+    const totalUsdcMap = Number(balance?.total?.USDC);
+    if (Number.isFinite(totalUsdcMap) && totalUsdcMap > 0) {
+        return { value: totalUsdcMap, source: 'total.USDC(fallback)' };
+    }
+
+    const totalUsdcObj = Number(balance?.USDC?.total);
+    if (Number.isFinite(totalUsdcObj) && totalUsdcObj > 0) {
+        return { value: totalUsdcObj, source: 'USDC.total(fallback)' };
+    }
+
+    return { value: 0, source: 'none' };
+}
+
 async function checkMarkets() {
     if (isCycleRunning) {
         console.warn('⏳ Preskačem ciklus: prethodni još traje.');
@@ -49,11 +96,12 @@ async function checkMarkets() {
         console.log(`[CYCLE ${cycleId}] Fetch balance...`);
         const balance = await exchange.fetchBalance();
 
-        // free balance, ne total - margina već zaključana u otvorenim pozicijama
-        // se time ne broji ponovno pri računanju veličine nove pozicije
-        const usdcBalance = balance['USDC'] ? balance['USDC'].free : 0;
+        const usdcResolved = getUsdcAvailableBalance(balance);
+        const usdcBalance = usdcResolved.value;
 
-        console.log(`\n[${new Date().toISOString()}] Balans: $${Number(usdcBalance || 0).toFixed(2)} | Skeniram...`);
+        console.log(
+            `\n[${new Date().toISOString()}] Balans: $${Number(usdcBalance || 0).toFixed(2)} | Skeniram... (source=${usdcResolved.source})`
+        );
 
         if (usdcBalance < 20) {
             console.log(`[CYCLE ${cycleId}] Nedovoljan free USDC (${usdcBalance}). Minimum je 20.`);
