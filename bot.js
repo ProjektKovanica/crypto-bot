@@ -108,12 +108,38 @@ async function checkMarkets() {
             return;
         }
 
+        // PRECHECK: pokupi cooldown i maks-pozicije samo jednom, ne u svakoj petlji
+        const cooldownSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('COOLDOWN_SECONDS');
+        const cooldownMs = (cooldownSetting ? parseInt(cooldownSetting.value, 10) : 300) * 1000;
+
+        const maxPosSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_CONCURRENT_POSITIONS');
+        const maxConcurrent = maxPosSetting ? parseInt(maxPosSetting.value, 10) : 3;
+
         for (const symbol of TRADING_PAIRS) {
             try {
+                // Precheck #1: maks broj pozicija (izbjegavamo dohvat indikatora ako je cap dostignut)
+                const openCount = db.prepare('SELECT COUNT(*) as c FROM active_positions').get().c;
+                if (openCount >= maxConcurrent) {
+                    console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: dostignut cap pozicija (${openCount}/${maxConcurrent})`);
+                    continue;
+                }
+
+                // Precheck #2: već otvorena pozicija za ovaj simbol
                 const existingPosition = db.prepare('SELECT id FROM active_positions WHERE symbol = ?').get(symbol);
                 if (existingPosition) {
                     console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: već otvorena pozicija.`);
                     continue;
+                }
+
+                // Precheck #3: cooldown — previše rano od zadnjeg trejda za ovaj simbol
+                const cooldownRow = db.prepare('SELECT last_trade_ts FROM symbol_cooldown WHERE symbol = ?').get(symbol);
+                if (cooldownRow) {
+                    const elapsed = Date.now() - cooldownRow.last_trade_ts;
+                    if (elapsed < cooldownMs) {
+                        const remainingSec = Math.ceil((cooldownMs - elapsed) / 1000);
+                        console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: cooldown aktivan (još ${remainingSec}s)`);
+                        continue;
+                    }
                 }
 
                 console.log(`[CYCLE ${cycleId}] ${symbol} -> dohvat indikatora...`);
@@ -137,7 +163,7 @@ async function checkMarkets() {
                     `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi} ema=${indicators.ema} macdHist=${indicators.macd.histogram}`
                 );
 
-                await evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance);
+                await evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, cycleId);
             } catch (symbolError) {
                 console.error(`[CYCLE ${cycleId}] Greška na ${symbol}:`, symbolError.message);
             }
