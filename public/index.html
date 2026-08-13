@@ -1,576 +1,434 @@
-<!DOCTYPE html>
-<html lang="hr">
+<!doctype html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Crypto Terminal</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
-    <style>
-        body { -webkit-font-smoothing: antialiased; }
-        ::-webkit-scrollbar { width: 4px; }
-        ::-webkit-scrollbar-thumb { background: #14532d; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Crypto Bot Dashboard</title>
+  <style>
+    :root{
+      --bg:#0f1220;
+      --card:#171a2b;
+      --muted:#8f9bb3;
+      --text:#e8ecf5;
+      --ok:#23c552;
+      --warn:#f0ad4e;
+      --danger:#ff4d4f;
+      --line:#262b45;
+      --btn:#2a3158;
+      --btnh:#384274;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+    .wrap{max-width:1200px;margin:24px auto;padding:0 16px}
+    h1{font-size:28px;margin:0 0 16px}
+    .muted{color:var(--muted)}
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(12,1fr);
+      gap:14px;
+    }
+    .card{
+      grid-column:span 12;
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px;
+    }
+    .col-4{grid-column:span 4}
+    .col-6{grid-column:span 6}
+    .col-8{grid-column:span 8}
+    .col-12{grid-column:span 12}
+    @media(max-width:960px){.col-4,.col-6,.col-8{grid-column:span 12}}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    button{
+      background:var(--btn);
+      color:var(--text);
+      border:1px solid var(--line);
+      border-radius:10px;
+      padding:10px 14px;
+      cursor:pointer;
+      font-weight:600;
+    }
+    button:hover{background:var(--btnh)}
+    button.ok{border-color:#1f7a39}
+    button.warn{border-color:#8a5b1c}
+    button.danger{border-color:#8b2325}
+    .pill{
+      display:inline-block;
+      padding:4px 10px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:700;
+      border:1px solid var(--line);
+    }
+    .pill.ok{color:#b9ffd0;border-color:#245f37;background:#14301f}
+    .pill.stop{color:#ffd2d2;border-color:#6e2a2b;background:#321718}
+    .kpi{font-size:26px;font-weight:800}
+    .small{font-size:13px}
+    table{
+      width:100%;
+      border-collapse:collapse;
+      font-size:14px;
+    }
+    th,td{
+      text-align:left;
+      padding:10px 8px;
+      border-bottom:1px solid var(--line);
+      vertical-align:top;
+    }
+    th{color:#b8c1d9;font-weight:700}
+    input,select,textarea{
+      width:100%;
+      background:#101427;
+      border:1px solid var(--line);
+      color:var(--text);
+      border-radius:10px;
+      padding:9px 10px;
+    }
+    .right{margin-left:auto}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    .statusline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    .hr{height:1px;background:var(--line);margin:10px 0}
+  </style>
 </head>
-<body class="bg-black text-green-500 font-mono p-4 pb-16">
+<body>
+  <div class="wrap">
+    <h1>🤖 Crypto Bot Dashboard</h1>
+    <div class="muted small">Secure API mode (x-api-key)</div>
 
-    <!-- LOGIN OVERLAY -->
-    <div id="loginOverlay" class="fixed inset-0 bg-black z-50 flex items-center justify-center p-4">
-        <div class="w-full max-w-sm border border-green-800 p-6">
-            <h1 class="text-lg mb-1 text-green-400">SYSTEM_MONITOR_V2</h1>
-            <p class="text-xs text-green-700 mb-4">Unesi API ključ za pristup dashboardu</p>
-            <input id="loginInput" type="password" placeholder="API ključ"
-                class="bg-black border border-green-800 p-2 w-full mb-3 text-green-400 outline-none focus:border-green-500" />
-            <button onclick="doLogin()" class="w-full bg-green-900 text-green-300 p-2 border border-green-700">POVEŽI SE</button>
-            <p id="loginError" class="text-red-500 text-xs mt-3 hidden"></p>
+    <div class="grid" style="margin-top:14px">
+      <div class="card col-12">
+        <div class="row">
+          <div class="statusline">
+            <span id="botPill" class="pill">Loading...</span>
+            <span class="small muted">Cycle:</span> <span id="cycleCounter" class="mono">-</span>
+            <span class="small muted">Running:</span> <span id="cycleRunning" class="mono">-</span>
+            <span class="small muted">Last Start:</span> <span id="lastStart" class="mono">-</span>
+            <span class="small muted">Last End:</span> <span id="lastEnd" class="mono">-</span>
+          </div>
+          <button class="right" onclick="changeApiKey()">Change API Key</button>
         </div>
+      </div>
+
+      <div class="card col-4">
+        <div class="muted small">USDC Free</div>
+        <div id="kpiFree" class="kpi">$0.00</div>
+      </div>
+      <div class="card col-4">
+        <div class="muted small">USDC Used</div>
+        <div id="kpiUsed" class="kpi">$0.00</div>
+      </div>
+      <div class="card col-4">
+        <div class="muted small">USDC Total</div>
+        <div id="kpiTotal" class="kpi">$0.00</div>
+      </div>
+
+      <div class="card col-12">
+        <div class="row">
+          <button class="warn" onclick="pauseBot()">⏸ Pause (no new entries)</button>
+          <button class="ok" onclick="resumeBot()">▶ Resume</button>
+          <button class="danger" onclick="emergencyStop()">🛑 Emergency Stop</button>
+          <button onclick="refreshAll()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="card col-12">
+        <h3 style="margin-top:0">Active Positions</h3>
+        <table id="positionsTable">
+          <thead>
+            <tr>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Entry</th>
+              <th>Size</th>
+              <th>SL</th>
+              <th>TP</th>
+              <th>Open Time</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="positionsBody"></tbody>
+        </table>
+      </div>
+
+      <div class="card col-12">
+        <h3 style="margin-top:0">Settings</h3>
+        <div class="grid">
+          <div class="col-4">
+            <label class="small muted">RISK_PERCENT</label>
+            <input id="RISK_PERCENT" />
+          </div>
+          <div class="col-4">
+            <label class="small muted">MAX_LEVERAGE</label>
+            <input id="MAX_LEVERAGE" />
+          </div>
+          <div class="col-4">
+            <label class="small muted">LIQUIDATION_SAFETY_FACTOR</label>
+            <input id="LIQUIDATION_SAFETY_FACTOR" />
+          </div>
+          <div class="col-4">
+            <label class="small muted">MAX_CONCURRENT_POSITIONS</label>
+            <input id="MAX_CONCURRENT_POSITIONS" />
+          </div>
+          <div class="col-4">
+            <label class="small muted">COOLDOWN_SECONDS</label>
+            <input id="COOLDOWN_SECONDS" />
+          </div>
+          <div class="col-4">
+            <label class="small muted">TRADING_HOURS</label>
+            <input id="TRADING_HOURS" />
+          </div>
+          <div class="col-4">
+            <label class="small muted">MAX_DAILY_LOSS_PERCENT</label>
+            <input id="MAX_DAILY_LOSS_PERCENT" />
+          </div>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <button class="ok" onclick="saveSettings()">💾 Save Settings</button>
+          <span id="settingsMsg" class="small muted"></span>
+        </div>
+      </div>
+
+      <div class="card col-12">
+        <h3 style="margin-top:0">Recent Trades</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Symbol</th>
+              <th>Side</th>
+              <th>Price</th>
+              <th>Amount</th>
+              <th>PnL</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody"></tbody>
+        </table>
+      </div>
     </div>
+  </div>
 
-    <div class="max-w-2xl mx-auto">
-        <div class="flex items-center justify-between border-b border-green-900 pb-2 mb-4">
-            <h1 class="text-2xl">SYSTEM_MONITOR_V2</h1>
-            <span id="connStatus" class="text-xs text-red-500">● offline</span>
-        </div>
+  <script>
+    // ---------- API KEY ----------
+    let API_KEY = localStorage.getItem('apiKey') || '';
+    if (!API_KEY) {
+      API_KEY = prompt('Enter API key');
+      if (API_KEY) localStorage.setItem('apiKey', API_KEY);
+    }
 
-        <div id="globalError" class="hidden mb-4 p-2 border border-red-700 text-red-400 text-xs"></div>
+    function changeApiKey() {
+      const k = prompt('Enter new API key');
+      if (k !== null) {
+        API_KEY = k.trim();
+        localStorage.setItem('apiKey', API_KEY);
+        refreshAll();
+      }
+    }
 
-        <!-- ACCOUNT / BALANCE -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">STANJE RAČUNA (USDC)</div>
-            <div class="grid grid-cols-3 gap-2">
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">TOTAL</div>
-                    <div id="balTotal" class="text-lg">--</div>
-                </div>
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">SLOBODNO</div>
-                    <div id="balFree" class="text-lg">--</div>
-                </div>
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">U POZICIJAMA</div>
-                    <div id="balUsed" class="text-lg">--</div>
-                </div>
+    async function apiFetch(url, options = {}) {
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': API_KEY || '',
+        ...(options.headers || {})
+      };
+      const res = await fetch(url, { ...options, headers });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+          const j = await res.json();
+          if (j?.error) msg += ` - ${j.error}`;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) return res.json();
+      return res.text();
+    }
+
+    function fmt(v, d = 2) {
+      const n = Number(v || 0);
+      return n.toLocaleString(undefined, { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
+
+    function setStatusPill(status) {
+      const el = document.getElementById('botPill');
+      if (status === 'RUNNING') {
+        el.className = 'pill ok';
+        el.textContent = 'RUNNING';
+      } else {
+        el.className = 'pill stop';
+        el.textContent = 'STOPPED';
+      }
+    }
+
+    // ---------- LOADERS ----------
+    async function loadStatus() {
+      const s = await apiFetch('/api/status');
+      setStatusPill(s.status);
+      document.getElementById('cycleCounter').textContent = s.cycleCounter ?? '-';
+      document.getElementById('cycleRunning').textContent = s.isCycleRunning ? 'YES' : 'NO';
+      document.getElementById('lastStart').textContent = s.lastCycleStartedAt || '-';
+      document.getElementById('lastEnd').textContent = s.lastCycleEndedAt || '-';
+    }
+
+    async function loadBalance() {
+      const b = await apiFetch('/api/balance');
+      document.getElementById('kpiFree').textContent = `$${fmt(b.free)}`;
+      document.getElementById('kpiUsed').textContent = `$${fmt(b.used)}`;
+      document.getElementById('kpiTotal').textContent = `$${fmt(b.total)}`;
+    }
+
+    async function loadPositions() {
+      const rows = await apiFetch('/api/positions');
+      const tb = document.getElementById('positionsBody');
+      tb.innerHTML = '';
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="8" class="muted">No active positions.</td></tr>`;
+        return;
+      }
+
+      for (const p of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="mono">${p.symbol || ''}</td>
+          <td>${p.side || ''}</td>
+          <td>${fmt(p.entry_price, 6)}</td>
+          <td>${fmt(p.size, 6)}</td>
+          <td>${p.stop_loss == null ? '-' : fmt(p.stop_loss, 6)}</td>
+          <td>${p.take_profit == null ? '-' : fmt(p.take_profit, 6)}</td>
+          <td>${p.open_time || '-'}</td>
+          <td>
+            <div class="row">
+              <button onclick="moveBE('${(p.symbol||'').replace(/'/g, "\\'")}')">SL→BE</button>
+              <button class="danger" onclick="closePos('${(p.symbol||'').replace(/'/g, "\\'")}')">Close</button>
             </div>
-        </div>
+          </td>
+        `;
+        tb.appendChild(tr);
+      }
+    }
 
-        <!-- PNL STATS -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">PERFORMANSE</div>
-            <div class="grid grid-cols-2 gap-2 mb-2">
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">UKUPNI PNL</div>
-                    <div id="statPnl" class="text-lg">--</div>
-                </div>
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">WIN RATE</div>
-                    <div id="statWinRate" class="text-lg">--</div>
-                </div>
-            </div>
-            <div class="grid grid-cols-4 gap-2 text-center">
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">TREJDOVA</div>
-                    <div id="statTotal" class="text-sm">--</div>
-                </div>
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">W / L</div>
-                    <div id="statWL" class="text-sm">--</div>
-                </div>
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">AVG WIN</div>
-                    <div id="statAvgWin" class="text-sm">--</div>
-                </div>
-                <div class="border border-green-900 p-2">
-                    <div class="text-[10px] text-green-700">AVG LOSS</div>
-                    <div id="statAvgLoss" class="text-sm">--</div>
-                </div>
-            </div>
-        </div>
+    async function loadSettings() {
+      const s = await apiFetch('/api/settings');
+      const keys = [
+        'RISK_PERCENT',
+        'MAX_LEVERAGE',
+        'LIQUIDATION_SAFETY_FACTOR',
+        'MAX_CONCURRENT_POSITIONS',
+        'COOLDOWN_SECONDS',
+        'TRADING_HOURS',
+        'MAX_DAILY_LOSS_PERCENT'
+      ];
+      for (const k of keys) {
+        const el = document.getElementById(k);
+        if (el) el.value = s[k] ?? '';
+      }
+    }
 
-        <!-- EQUITY CURVE -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">EQUITY KRIVULJA (kumulativni PnL)</div>
-            <div id="equityChart" class="h-40 border border-green-800"></div>
-        </div>
+    async function loadTrades() {
+      const rows = await apiFetch('/api/trades?limit=20');
+      const tb = document.getElementById('tradesBody');
+      tb.innerHTML = '';
+      if (!rows.length) {
+        tb.innerHTML = `<tr><td colspan="6" class="muted">No trades yet.</td></tr>`;
+        return;
+      }
+      for (const t of rows) {
+        const pnl = Number(t.realized_pnl || 0);
+        const color = pnl >= 0 ? 'style="color:#8ff5b1"' : 'style="color:#ff9f9f"';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${t.timestamp || '-'}</td>
+          <td class="mono">${t.symbol || ''}</td>
+          <td>${t.side || ''}</td>
+          <td>${fmt(t.price, 6)}</td>
+          <td>${fmt(t.amount, 6)}</td>
+          <td ${color}>${fmt(pnl, 2)}</td>
+        `;
+        tb.appendChild(tr);
+      }
+    }
 
-        <!-- PAR + CANDLESTICK CHART -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">GRAF PARA</div>
-            <select id="pair" onchange="initChart()" class="bg-black border border-green-800 p-2 w-full mb-2"></select>
-            <div id="chart" class="h-56 border border-green-800"></div>
-        </div>
+    // ---------- ACTIONS ----------
+    async function pauseBot() {
+      if (!confirm('Pause bot? (no new entries)')) return;
+      await apiFetch('/api/pause', { method: 'POST' });
+      await refreshAll();
+    }
 
-        <!-- OPEN POSITIONS -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">AKTIVNE POZICIJE</div>
-            <div id="pos" class="space-y-2 text-xs">
-                <div class="text-green-800">Nema otvorenih pozicija.</div>
-            </div>
-        </div>
+    async function resumeBot() {
+      await apiFetch('/api/resume', { method: 'POST' });
+      await refreshAll();
+    }
 
-        <!-- UNREALIZED PNL -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">UNREALIZED PNL (live)</div>
-            <div id="unrealizedPnl" class="text-xs border border-green-900 divide-y divide-green-900">
-                <div class="p-2 text-green-800">--</div>
-            </div>
-        </div>
+    async function emergencyStop() {
+      if (!confirm('Emergency stop will set BOT_ACTIVE=false and close all positions. Continue?')) return;
+      await apiFetch('/api/emergency-stop', { method: 'POST' });
+      await refreshAll();
+    }
 
-        <!-- TRADE HISTORY -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">POVIJEST TREJDOVA (zadnjih 20)</div>
-            <div id="tradeHistory" class="text-xs border border-green-900 divide-y divide-green-900">
-                <div class="p-2 text-green-800">Učitavam...</div>
-            </div>
-        </div>
+    async function closePos(symbol) {
+      if (!confirm(`Close position ${symbol}?`)) return;
+      await apiFetch('/api/close-position', {
+        method: 'POST',
+        body: JSON.stringify({ symbol })
+      });
+      await refreshAll();
+    }
 
-        <!-- BY SYMBOL BREAKDOWN -->
-        <div class="mb-4">
-            <div class="text-xs text-green-700 mb-1">PNL PO PARU</div>
-            <div id="bySymbol" class="text-xs border border-green-900 divide-y divide-green-900">
-                <div class="p-2 text-green-800">Učitavam...</div>
-            </div>
-        </div>
+    async function moveBE(symbol) {
+      await apiFetch('/api/move-sl-breakeven', {
+        method: 'POST',
+        body: JSON.stringify({ symbol })
+      });
+      await refreshAll();
+    }
 
-        <button onclick="pause()" class="w-full mt-2 bg-yellow-900 text-yellow-500 p-2 border border-yellow-700">PAUSE_NEW_ENTRIES</button>
-        <button onclick="resumeBot()" class="w-full mt-2 bg-green-900 text-green-400 p-2 border border-green-700">RESUME_NEW_ENTRIES</button>
-        <button onclick="emergencyStop()" class="w-full mt-2 bg-red-900 text-red-500 p-2 border border-red-700">EMERGENCY_STOP (zatvori sve)</button>
+    async function saveSettings() {
+      const payload = {
+        RISK_PERCENT: document.getElementById('RISK_PERCENT').value,
+        MAX_LEVERAGE: document.getElementById('MAX_LEVERAGE').value,
+        LIQUIDATION_SAFETY_FACTOR: document.getElementById('LIQUIDATION_SAFETY_FACTOR').value,
+        MAX_CONCURRENT_POSITIONS: document.getElementById('MAX_CONCURRENT_POSITIONS').value,
+        COOLDOWN_SECONDS: document.getElementById('COOLDOWN_SECONDS').value,
+        TRADING_HOURS: document.getElementById('TRADING_HOURS').value,
+        MAX_DAILY_LOSS_PERCENT: document.getElementById('MAX_DAILY_LOSS_PERCENT').value
+      };
+      await apiFetch('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      const el = document.getElementById('settingsMsg');
+      el.textContent = 'Saved.';
+      setTimeout(() => el.textContent = '', 2000);
+    }
 
-        <!-- SETTINGS -->
-        <div class="mt-6 mb-4">
-            <div class="text-xs text-green-700 mb-2">POSTAVKE BOTA</div>
-            <div id="settingsPanel" class="border border-green-900 p-3 space-y-2 text-xs">
-                <div class="text-green-800">Učitavam postavke...</div>
-            </div>
-            <button onclick="saveSettings()" class="w-full mt-2 bg-green-900 text-green-300 p-2 border border-green-700">SPREMI POSTAVKE</button>
-            <div id="settingsMsg" class="text-xs mt-1 hidden"></div>
-        </div>
-    </div>
+    async function refreshAll() {
+      try {
+        await Promise.all([
+          loadStatus(),
+          loadBalance(),
+          loadPositions(),
+          loadSettings(),
+          loadTrades()
+        ]);
+      } catch (e) {
+        alert('Dashboard error: ' + e.message + '\nTip: check API key via "Change API Key".');
+      }
+    }
 
-    <script>
-        // ---------- AUTH ----------
-        let API_KEY = localStorage.getItem('dashboard_api_key') || '';
-
-        function authHeaders() {
-            return { 'x-api-key': API_KEY };
-        }
-
-        async function doLogin() {
-            const input = document.getElementById('loginInput');
-            const errEl = document.getElementById('loginError');
-            const candidate = input.value.trim();
-            errEl.classList.add('hidden');
-
-            try {
-                const res = await fetch('/api/pairs', { headers: { 'x-api-key': candidate } });
-                if (res.status === 401) {
-                    errEl.textContent = 'Pogrešan API ključ.';
-                    errEl.classList.remove('hidden');
-                    return;
-                }
-                if (!res.ok) {
-                    errEl.textContent = `Greška servera (status ${res.status}).`;
-                    errEl.classList.remove('hidden');
-                    return;
-                }
-                API_KEY = candidate;
-                localStorage.setItem('dashboard_api_key', API_KEY);
-                document.getElementById('loginOverlay').classList.add('hidden');
-                boot();
-            } catch (err) {
-                errEl.textContent = 'Server nedostupan: ' + err.message;
-                errEl.classList.remove('hidden');
-            }
-        }
-
-        // ---------- FETCH WRAPPER ----------
-        function showError(message) {
-            console.error('Dashboard error:', message);
-            const el = document.getElementById('globalError');
-            el.textContent = '⚠️ ' + message;
-            el.classList.remove('hidden');
-            document.getElementById('connStatus').textContent = '● offline';
-            document.getElementById('connStatus').className = 'text-xs text-red-500';
-        }
-
-        function clearError() {
-            document.getElementById('globalError').classList.add('hidden');
-            document.getElementById('connStatus').textContent = '● online';
-            document.getElementById('connStatus').className = 'text-xs text-green-500';
-        }
-
-        async function apiFetch(url, options = {}) {
-            try {
-                const res = await fetch(url, { 
-                    ...options, 
-                    headers: { ...(options.headers || {}), ...authHeaders() } 
-                });
-
-                if (res.status === 401) {
-                    localStorage.removeItem('dashboard_api_key');
-                    document.getElementById('loginOverlay').classList.remove('hidden');
-                    throw new Error('Sesija istekla, prijavi se ponovno.');
-                }
-
-                let data;
-                try {
-                    data = await res.json();
-                } catch (parseErr) {
-                    throw new Error(`Neispravan odgovor servera (status ${res.status})`);
-                }
-
-                if (!res.ok) {
-                    throw new Error(data.error || `Greška servera (status ${res.status})`);
-                }
-
-                return data;
-            } catch (networkErr) {
-                throw new Error(`Server nedostupan (${networkErr.message})`);
-            }
-        }
-
-        // ---------- FORMATTING ----------
-        const fmt = (n) => (n == null || isNaN(n)) ? '--' : `$${Number(n).toFixed(2)}`;
-        const fmtSigned = (n) => {
-            if (n == null || isNaN(n)) return '--';
-            const v = Number(n);
-            return (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
-        };
-        const pnlColor = (n) => (n == null) ? 'text-green-600' : (n >= 0 ? 'text-green-400' : 'text-red-500');
-
-        // ---------- CHARTS ----------
-        let chart, candleSeries, equityChart, equitySeries;
-
-        function initCharts() {
-            try {
-                chart = LightweightCharts.createChart(document.getElementById('chart'), {
-                    layout: { background: { color: '#000' }, textColor: '#16a34a' },
-                    grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
-                });
-                candleSeries = chart.addCandlestickSeries();
-
-                equityChart = LightweightCharts.createChart(document.getElementById('equityChart'), {
-                    layout: { background: { color: '#000' }, textColor: '#16a34a' },
-                    grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
-                });
-                equitySeries = equityChart.addAreaSeries({
-                    lineColor: '#22c55e', topColor: 'rgba(34,197,94,0.3)', bottomColor: 'rgba(34,197,94,0)'
-                });
-
-                new ResizeObserver(() => {
-                    if (chart) chart.applyOptions({ width: document.getElementById('chart').clientWidth });
-                    if (equityChart) equityChart.applyOptions({ width: document.getElementById('equityChart').clientWidth });
-                }).observe(document.getElementById('chart').parentElement);
-            } catch (e) {
-                console.error('Chart init error:', e);
-            }
-        }
-
-        async function initChart() {
-            const sym = document.getElementById('pair').value;
-            if (!sym) return;
-            try {
-                const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym.replace('/','')}&interval=15m&limit=100`);
-                if (!res.ok) throw new Error(`Binance API greška (status ${res.status})`);
-                const data = await res.json();
-                if (candleSeries && data.length > 0) {
-                    candleSeries.setData(data.map(d => ({ time: Math.floor(d[0] / 1000), open: +d[1], high: +d[2], low: +d[3], close: +d[4] })));
-                }
-            } catch (err) {
-                console.error('Chart load error:', err);
-            }
-        }
-
-        // ---------- DATA LOADERS ----------
-        async function loadPairs() {
-            try {
-                const pairs = await apiFetch('/api/pairs');
-                const sel = document.getElementById('pair');
-                sel.innerHTML = '';
-                if (Array.isArray(pairs)) {
-                    pairs.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
-                    await initChart();
-                }
-                clearError();
-            } catch (err) {
-                showError('Parovi: ' + err.message);
-            }
-        }
-
-        async function loadBalance() {
-            try {
-                const b = await apiFetch('/api/balance');
-                document.getElementById('balTotal').textContent = fmt(b.total);
-                document.getElementById('balFree').textContent = fmt(b.free);
-                document.getElementById('balUsed').textContent = fmt(b.used);
-                clearError();
-            } catch (err) {
-                console.error('Balance error:', err);
-            }
-        }
-
-        async function loadPositions() {
-            try {
-                const res = await apiFetch('/api/positions');
-                const el = document.getElementById('pos');
-                if (!Array.isArray(res) || res.length === 0) {
-                    el.innerHTML = '<div class="text-green-800">Nema otvorenih pozicija.</div>';
-                    return;
-                }
-                el.innerHTML = res.map(p => {
-                    const openedAt = p.open_time ? new Date(p.open_time).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--';
-                    return `
-                    <div class="border border-green-800 p-2">
-                        <div class="flex justify-between items-start">
-                            <div>
-                                <div>${p.symbol} <span class="${p.side === 'buy' ? 'text-green-400' : 'text-red-400'}">${p.side.toUpperCase()}</span></div>
-                                <div class="text-[10px] text-green-700">Ulaz: $${p.entry_price} | SL: $${p.stop_loss} | TP: $${p.take_profit}</div>
-                                <div class="text-[10px] text-green-800">Otvoreno: ${openedAt}</div>
-                            </div>
-                            <div class="flex flex-col gap-1 text-right">
-                                <button onclick="closePos('${p.symbol}')" class="text-red-500 underline text-xs">CLOSE</button>
-                                <button onclick="moveSLBreakeven('${p.symbol}')" class="text-yellow-500 underline text-xs">SL→BE</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                }).join('');
-                clearError();
-            } catch (err) {
-                console.error('Positions error:', err);
-            }
-        }
-
-        async function loadTrades() {
-            try {
-                const trades = await apiFetch('/api/trades?limit=20');
-                const el = document.getElementById('tradeHistory');
-                if (!Array.isArray(trades) || trades.length === 0) {
-                    el.innerHTML = '<div class="p-2 text-green-800">Još nema zatvorenih trejdova.</div>';
-                    return;
-                }
-                el.innerHTML = trades.map(t => `
-                    <div class="flex justify-between p-2">
-                        <span>${t.symbol} <span class="text-green-700">${t.side}</span></span>
-                        <span class="text-green-700">${new Date(t.timestamp).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
-                        <span class="${pnlColor(t.realized_pnl)}">${fmtSigned(t.realized_pnl)}</span>
-                    </div>
-                `).join('');
-            } catch (err) {
-                console.error('Trades error:', err);
-            }
-        }
-
-        async function loadStats() {
-            try {
-                const s = await apiFetch('/api/stats');
-
-                document.getElementById('statPnl').textContent = fmtSigned(s.totalPnl);
-                document.getElementById('statPnl').className = 'text-lg ' + pnlColor(s.totalPnl);
-                document.getElementById('statWinRate').textContent = s.totalTrades > 0 ? `${s.winRate}%` : '--';
-                document.getElementById('statTotal').textContent = s.totalTrades;
-                document.getElementById('statWL').textContent = `${s.wins} / ${s.losses}`;
-                document.getElementById('statAvgWin').textContent = s.wins > 0 ? fmtSigned(s.avgWin) : '--';
-                document.getElementById('statAvgWin').className = 'text-sm text-green-400';
-                document.getElementById('statAvgLoss').textContent = s.losses > 0 ? fmtSigned(s.avgLoss) : '--';
-                document.getElementById('statAvgLoss').className = 'text-sm text-red-500';
-
-                if (s.equityCurve && Array.isArray(s.equityCurve) && s.equityCurve.length > 0 && equitySeries) {
-                    const seen = new Set();
-                    const data = s.equityCurve
-                        .map(e => ({ time: Math.floor(new Date(e.timestamp).getTime() / 1000), value: e.cumulative_pnl }))
-                        .filter(e => {
-                            if (seen.has(e.time)) return false;
-                            seen.add(e.time);
-                            return true;
-                        })
-                        .sort((a, b) => a.time - b.time);
-                    if (data.length > 0) {
-                        equitySeries.setData(data);
-                    }
-                }
-
-                const symEl = document.getElementById('bySymbol');
-                const symbols = Object.entries(s.bySymbol || {});
-                if (symbols.length === 0) {
-                    symEl.innerHTML = '<div class="p-2 text-green-800">Nema podataka.</div>';
-                } else {
-                    symEl.innerHTML = symbols
-                        .sort((a, b) => b[1].pnl - a[1].pnl)
-                        .map(([sym, d]) => `
-                            <div class="flex justify-between p-2">
-                                <span>${sym}</span>
-                                <span class="text-green-700">${d.trades} trejdova</span>
-                                <span class="text-green-600">${d.winRate != null ? d.winRate + '% W' : '--'}</span>
-                                <span class="${pnlColor(d.pnl)}">${fmtSigned(d.pnl)}</span>
-                            </div>
-                        `).join('');
-                }
-                clearError();
-            } catch (err) {
-                console.error('Stats error:', err);
-            }
-        }
-
-        async function loadUnrealizedPnl() {
-            try {
-                const data = await apiFetch('/api/unrealized-pnl');
-                const el = document.getElementById('unrealizedPnl');
-                if (!Array.isArray(data) || data.length === 0) {
-                    el.innerHTML = '<div class="p-2 text-green-800">Nema otvorenih pozicija.</div>';
-                    return;
-                }
-                el.innerHTML = data.map(p => `
-                    <div class="flex justify-between p-2">
-                        <span>${p.symbol}</span>
-                        <span class="text-green-700">Mark: ${p.markPrice != null ? '$' + Number(p.markPrice).toFixed(2) : '--'}</span>
-                        <span class="${pnlColor(p.unrealizedPnl)}">${p.unrealizedPnl != null ? fmtSigned(p.unrealizedPnl) : '--'}</span>
-                    </div>
-                `).join('');
-            } catch (err) {
-                console.error('Unrealized PnL error:', err);
-            }
-        }
-
-        async function refreshAll() {
-            try {
-                await Promise.all([loadBalance(), loadPositions(), loadUnrealizedPnl(), loadTrades(), loadStats(), loadSettings()]);
-            } catch (e) {
-                console.error('Refresh error:', e);
-            }
-        }
-
-        // ---------- ACTIONS ----------
-        async function closePos(sym) {
-            try {
-                await apiFetch('/api/close-position', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol: sym })
-                });
-                await refreshAll();
-            } catch (err) {
-                alert('Greška pri zatvaranju pozicije: ' + err.message);
-            }
-        }
-
-        async function moveSLBreakeven(sym) {
-            try {
-                await apiFetch('/api/move-sl-breakeven', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol: sym })
-                });
-                await refreshAll();
-            } catch (err) {
-                alert('Greška pri pomaku SL: ' + err.message);
-            }
-        }
-
-        async function pause() {
-            try {
-                await apiFetch('/api/pause', { method: 'POST' });
-                alert('Bot pauziran - nove pozicije se neće otvarati, postojeće ostaju.');
-            } catch (err) {
-                alert('Greška: ' + err.message);
-            }
-        }
-
-        async function resumeBot() {
-            try {
-                await apiFetch('/api/resume', { method: 'POST' });
-                alert('Bot nastavlja - novi entryji su aktivni.');
-            } catch (err) {
-                alert('Greška: ' + err.message);
-            }
-        }
-
-        // ---------- SETTINGS ----------
-        const SETTINGS_META = {
-            RISK_PERCENT:               { label: 'Rizik po trejdu (%)', type: 'number', step: '0.1', min: '0.1', max: '10' },
-            MAX_LEVERAGE:               { label: 'Max leverage (x)',     type: 'number', step: '1',   min: '1',   max: '125' },
-            LIQUIDATION_SAFETY_FACTOR:  { label: 'Likv. sigurnosni faktor (0–1)', type: 'number', step: '0.05', min: '0.1', max: '1' },
-            MAX_CONCURRENT_POSITIONS:   { label: 'Max istovremene pozicije', type: 'number', step: '1', min: '1', max: '20' },
-            COOLDOWN_SECONDS:           { label: 'Cooldown između trejdova (s)', type: 'number', step: '10', min: '0', max: '3600' },
-            TRADING_HOURS:              { label: 'Trading sati UTC (npr. 06:00-20:00)', type: 'text', step: null, min: null, max: null },
-            MAX_DAILY_LOSS_PERCENT:     { label: 'Max dnevni gubitak (%)', type: 'number', step: '0.5', min: '0.5', max: '50' }
-        };
-
-        async function loadSettings() {
-            try {
-                const s = await apiFetch('/api/settings');
-                const panel = document.getElementById('settingsPanel');
-                panel.innerHTML = Object.entries(SETTINGS_META).map(([key, meta]) => {
-                    const extraAttrs = meta.type === 'number'
-                        ? `step="${meta.step}" min="${meta.min}" max="${meta.max}"`
-                        : '';
-                    return `
-                    <div class="flex justify-between items-center">
-                        <label class="text-green-700 w-2/3">${meta.label}</label>
-                        <input id="setting_${key}" type="${meta.type}" ${extraAttrs}
-                            value="${s[key] ?? ''}"
-                            class="bg-black border border-green-800 p-1 w-28 text-green-400 outline-none focus:border-green-500 text-right" />
-                    </div>
-                `}).join('');
-            } catch (err) {
-                console.error('Settings load error:', err);
-            }
-        }
-
-        async function saveSettings() {
-            const msgEl = document.getElementById('settingsMsg');
-            const updates = {};
-            for (const key of Object.keys(SETTINGS_META)) {
-                const el = document.getElementById('setting_' + key);
-                if (el) updates[key] = el.value;
-            }
-            try {
-                await apiFetch('/api/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updates)
-                });
-                msgEl.textContent = '✅ Postavke spremljene.';
-                msgEl.className = 'text-xs mt-1 text-green-400';
-                msgEl.classList.remove('hidden');
-                setTimeout(() => msgEl.classList.add('hidden'), 3000);
-            } catch (err) {
-                msgEl.textContent = '❌ Greška: ' + err.message;
-                msgEl.className = 'text-xs mt-1 text-red-500';
-                msgEl.classList.remove('hidden');
-            }
-        }
-
-        async function emergencyStop() {
-            if (!confirm('Ovo će zatvoriti SVE otvorene pozicije po tržišnoj cijeni. Nastaviti?')) return;
-            try {
-                const res = await apiFetch('/api/emergency-stop', { method: 'POST' });
-                alert('Bot zaustavljen, pozicije zatvorene: ' + JSON.stringify(res.results));
-                await refreshAll();
-            } catch (err) {
-                alert('Greška: ' + err.message);
-            }
-        }
-
-        // ---------- BOOT ----------
-        async function boot() {
-            initCharts();
-            try {
-                await loadPairs();
-                await refreshAll();
-                clearError();
-                setInterval(refreshAll, 5000);
-            } catch (err) {
-                showError('Inicijalizacija: ' + err.message);
-            }
-        }
-
-        if (API_KEY) {
-            document.getElementById('loginOverlay').classList.add('hidden');
-            boot().catch(err => {
-                console.error('Boot error:', err);
-                document.getElementById('loginOverlay').classList.remove('hidden');
-            });
-        }
-    </script>
+    // initial load + auto-refresh
+    refreshAll();
+    setInterval(() => {
+      loadStatus().catch(() => {});
+      loadBalance().catch(() => {});
+      loadPositions().catch(() => {});
+    }, 15000);
+  </script>
 </body>
 </html>
