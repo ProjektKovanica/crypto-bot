@@ -98,29 +98,33 @@ crypto-bot/
 
 ## When Does the Bot Start Trading?
 
-The bot scans all 6 trading pairs every **15 seconds**. A trade is opened only when **all** of the following conditions are met simultaneously:
+The bot scans all 6 trading pairs every **15 seconds**. A trade is opened when **at least 3 out of 4** core signal conditions are met, plus safety filters pass:
 
-### LONG Entry Conditions
+### LONG Core Conditions (need ≥ 3 of 4)
 1. **Uptrend**: Current price is above the 50-period EMA
 2. **Oversold RSI**: RSI (14) is below 40
 3. **Bullish Momentum**: MACD histogram is positive
 4. **RSI Rising**: Current RSI is higher than the previous RSI
-5. **Multi-Timeframe Confirmation**: Both 1h and 4h timeframes are bullish
-6. **ADX Filter**: ADX (14) ≥ 25 (trending market required)
-7. **Volume Filter**: Current volume is above the 20-period volume SMA
-8. **Funding Rate**: Funding rate ≤ +0.05% (not expensive to hold long)
-9. **Trading Hours**: Within configured UTC window (default: 06:00–20:00)
-10. **Cooldown**: At least 300 seconds since the last trade on this pair
-11. **Position Cap**: Fewer than 3 open positions (configurable)
-12. **Daily Drawdown**: Daily realized loss has not exceeded 5% of balance
-13. **Minimum Balance**: At least $20 USDC available
-14. **Minimum Position**: Notional value ≥ $10
 
-### SHORT Entry Conditions
-Same filters as LONG, but mirrored:
-- **Downtrend** (price below EMA), **Overbought RSI** (> 60), **Bearish MACD**, **RSI Falling**, **MTF bearish**, and funding rate ≤ −0.05%.
+### SHORT Core Conditions (need ≥ 3 of 4)
+1. **Downtrend**: Current price is below the 50-period EMA
+2. **Overbought RSI**: RSI (14) is above 60
+3. **Bearish Momentum**: MACD histogram is negative
+4. **RSI Falling**: Current RSI is lower than the previous RSI
 
-> Because so many conditions must align, it is normal for the bot to run for **hours or even days** without opening a trade, especially in low-volatility or ranging markets (ADX < 25).
+### Soft Filters (logged as warnings, do not block trades)
+- **ADX**: ADX (14) ≥ 25 preferred but not required
+- **Volume**: Above-average volume preferred but not required
+- **Multi-Timeframe Confirmation**: 1h/4h alignment preferred but not required
+
+### Hard Filters (will block trades)
+- **Funding Rate**: Funding rate must not be unfavorable (> ±0.05%)
+- **Trading Hours**: Within configured UTC window (default: 06:00–20:00)
+- **Cooldown**: At least 300 seconds since the last trade on this pair
+- **Position Cap**: Fewer than 3 open positions (configurable)
+- **Daily Drawdown**: Daily realized loss has not exceeded 5% of balance
+- **Minimum Balance**: At least $20 USDC available
+- **Minimum Position**: Notional value ≥ $10
 
 ## Risk Management
 
