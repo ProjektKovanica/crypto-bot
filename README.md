@@ -96,11 +96,48 @@ crypto-bot/
 └── package.json           # Dependencies
 ```
 
+## When Does the Bot Start Trading?
+
+The bot scans all 6 trading pairs every **15 seconds**. A trade is opened when **at least 3 out of 4** core signal conditions are met, plus safety filters pass:
+
+### LONG Core Conditions (need ≥ 3 of 4)
+1. **Uptrend**: Current price is above the 50-period EMA
+2. **Oversold RSI**: RSI (14) is below 40
+3. **Bullish Momentum**: MACD histogram is positive
+4. **RSI Rising**: Current RSI is higher than the previous RSI
+
+### SHORT Core Conditions (need ≥ 3 of 4)
+1. **Downtrend**: Current price is below the 50-period EMA
+2. **Overbought RSI**: RSI (14) is above 60
+3. **Bearish Momentum**: MACD histogram is negative
+4. **RSI Falling**: Current RSI is lower than the previous RSI
+
+### Soft Filters (logged as warnings, do not block trades)
+- **ADX**: ADX (14) ≥ 25 preferred but not required
+- **Volume**: Above-average volume preferred but not required
+- **Multi-Timeframe Confirmation**: 1h/4h alignment preferred but not required
+
+### Hard Filters (will block trades)
+- **Funding Rate**: Funding rate must not be unfavorable (> ±0.05%)
+- **Trading Hours**: Within configured UTC window (default: 06:00–20:00)
+- **Cooldown**: At least 300 seconds since the last trade on this pair
+- **Position Cap**: Fewer than 3 open positions (configurable)
+- **Daily Drawdown**: Daily realized loss has not exceeded 5% of balance
+- **Minimum Balance**: At least $20 USDC available
+- **Minimum Position**: Notional value ≥ $10
+
 ## Risk Management
 
-- **Default Risk**: 2% of balance per trade
-- **Stop-Loss**: 3% below entry
-- **Take-Profit**: 6% above entry
+- **Default Risk**: 2% of balance per trade (adjusted via half-Kelly Criterion when ≥ 10 historical trades exist)
+- **Stop-Loss**: 1.5 × ATR below/above entry (fallback: 3% if ATR unavailable)
+- **Take-Profit**: 3 × ATR above/below entry (fallback: 6% if ATR unavailable)
+- **Risk-Reward Ratio**: 2 : 1 (TP distance is 2× the SL distance)
+- **Trailing Stop**: Activates when position is ≥ 1.5% in profit; trails at 1 × ATR from the highest (long) or lowest (short) seen price
+- **Dynamic Leverage**: Calculated as `floor(safety_factor / SL%)`, capped at MAX_LEVERAGE (default: 10×)
+- **Max Concurrent Positions**: 3 (configurable)
+- **Cooldown Between Trades**: 300 seconds per pair (configurable)
+- **Trading Hours**: 06:00–20:00 UTC by default (configurable, or `disabled`)
+- **Daily Drawdown Limit**: 5% of balance — no new entries after this is breached
 - **Minimum Balance**: $20 USDC required
 
 ⚠️ **DISCLAIMER**: Cryptocurrency trading is risky. Test thoroughly on testnet before live trading with real funds.

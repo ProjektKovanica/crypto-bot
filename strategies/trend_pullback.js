@@ -104,17 +104,16 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     const { currentPrice, rsi, rsiPrev, ema, macd, atr, adx,
             currentVolume, volumeSMA, mtfBullish, mtfBearish } = indicators;
 
-    // ── ADX filter: trgujemo samo u trending tržištu ───────────────────────
+    // ── Soft filters (warn but don't block) ─────────────────────────────
     const adxThreshold = 25;
-    if (adx != null && adx < adxThreshold) {
-        console.log(`${tag} ${symbol} SKIP: ADX=${adx != null ? adx.toFixed(1) : 'n/a'} < ${adxThreshold} (ranging market)`);
-        return;
+    const adxOk = adx == null || adx >= adxThreshold;
+    if (!adxOk) {
+        console.log(`${tag} ${symbol} ⚠️ ADX=${adx.toFixed(1)} < ${adxThreshold} (ranging market, ali nastavljam)`);
     }
 
-    // ── Volume filter: signal mora imati nadprosječni volumen ─────────────
-    if (volumeSMA != null && currentVolume != null && currentVolume < volumeSMA) {
-        console.log(`${tag} ${symbol} SKIP: volumen ispod SMA (${currentVolume?.toFixed(0)} < ${volumeSMA?.toFixed(0)})`);
-        return;
+    const volumeOk = volumeSMA == null || currentVolume == null || currentVolume >= volumeSMA;
+    if (!volumeOk) {
+        console.log(`${tag} ${symbol} ⚠️ volumen ispod SMA (${currentVolume?.toFixed(0)} < ${volumeSMA?.toFixed(0)}, ali nastavljam)`);
     }
 
     // ── Uvjeti za LONG ────────────────────────────────────────────────────
@@ -128,6 +127,9 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     const isOverbought       = rsi > 60;
     const isBearishMomentum  = macd.histogram < 0;
     const isRsiFalling       = rsiPrev != null && rsi < rsiPrev;
+
+    // Minimum core conditions needed (out of 4) to trigger entry
+    const MIN_CORE_CONDITIONS = 3;
 
     // ── Postavke ──────────────────────────────────────────────────────────
     const riskSetting   = db.prepare('SELECT value FROM settings WHERE key = ?').get('RISK_PERCENT');
@@ -155,11 +157,11 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     const leverage    = Math.min(maxLeverage, Math.max(1, rawLeverage));
 
     // ── LONG logika ───────────────────────────────────────────────────────
-    if (isUptrend && isOversold && isBullishMomentum && isRsiRising) {
-        // MTF potvrda: 1h i 4h moraju biti bullish
+    const longCoreCount = [isUptrend, isOversold, isBullishMomentum, isRsiRising].filter(Boolean).length;
+    if (longCoreCount >= MIN_CORE_CONDITIONS) {
+        // MTF potvrda: soft filter (upozorenje, ne blokira)
         if (!mtfBullish) {
-            console.log(`${tag} ${symbol} SKIP LONG: MTF potvrda nije zadovoljena (1h/4h downtrend)`);
-            return;
+            console.log(`${tag} ${symbol} ⚠️ LONG: MTF potvrda nije zadovoljena (1h/4h downtrend), ali nastavljam`);
         }
 
         // Funding rate provjera
@@ -168,7 +170,7 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
             return;
         }
 
-        console.log(`${tag} ${symbol} SIGNAL LONG | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum} rsiRising=${isRsiRising} adx=${adx?.toFixed(1)} mtfBullish=${mtfBullish} kelly=${kellyRisk.toFixed(2)}% | price=${currentPrice} rsi=${rsi?.toFixed(2)} atr=${atr?.toFixed(4)}`);
+        console.log(`${tag} ${symbol} SIGNAL LONG (${longCoreCount}/4 conditions) | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum} rsiRising=${isRsiRising} adx=${adx?.toFixed(1)} mtfBullish=${mtfBullish} kelly=${kellyRisk.toFixed(2)}% | price=${currentPrice} rsi=${rsi?.toFixed(2)} atr=${atr?.toFixed(4)}`);
 
         const slPrice = currentPrice - slDistance;
         const tpPrice = currentPrice + tpDistance;
@@ -207,11 +209,11 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     }
 
     // ── SHORT logika ──────────────────────────────────────────────────────
-    else if (isDowntrend && isOverbought && isBearishMomentum && isRsiFalling) {
-        // MTF potvrda: 1h i 4h moraju biti bearish
+    const shortCoreCount = [isDowntrend, isOverbought, isBearishMomentum, isRsiFalling].filter(Boolean).length;
+    if (longCoreCount < MIN_CORE_CONDITIONS && shortCoreCount >= MIN_CORE_CONDITIONS) {
+        // MTF potvrda: soft filter (upozorenje, ne blokira)
         if (!mtfBearish) {
-            console.log(`${tag} ${symbol} SKIP SHORT: MTF potvrda nije zadovoljena (1h/4h uptrend)`);
-            return;
+            console.log(`${tag} ${symbol} ⚠️ SHORT: MTF potvrda nije zadovoljena (1h/4h uptrend), ali nastavljam`);
         }
 
         // Funding rate provjera
@@ -220,7 +222,7 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
             return;
         }
 
-        console.log(`${tag} ${symbol} SIGNAL SHORT | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum} rsiFalling=${isRsiFalling} adx=${adx?.toFixed(1)} mtfBearish=${mtfBearish} kelly=${kellyRisk.toFixed(2)}% | price=${currentPrice} rsi=${rsi?.toFixed(2)} atr=${atr?.toFixed(4)}`);
+        console.log(`${tag} ${symbol} SIGNAL SHORT (${shortCoreCount}/4 conditions) | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum} rsiFalling=${isRsiFalling} adx=${adx?.toFixed(1)} mtfBearish=${mtfBearish} kelly=${kellyRisk.toFixed(2)}% | price=${currentPrice} rsi=${rsi?.toFixed(2)} atr=${atr?.toFixed(4)}`);
 
         const slPrice = currentPrice + slDistance;
         const tpPrice = currentPrice - tpDistance;
@@ -259,7 +261,7 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     }
 
     // ── Nema signala ──────────────────────────────────────────────────────
-    else {
+    if (longCoreCount < MIN_CORE_CONDITIONS && shortCoreCount < MIN_CORE_CONDITIONS) {
         console.log(
             `${tag} ${symbol} NO SIGNAL | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum} rsiRising=${isRsiRising}` +
             ` | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum} rsiFalling=${isRsiFalling}` +
