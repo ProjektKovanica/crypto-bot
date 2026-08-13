@@ -474,6 +474,82 @@ app.get('/api/stats', (req, res) => {
     d.pnl = Number(d.pnl.toFixed(2));
   }
 
+  // Advanced stats: max drawdown, profit factor, streaks, Sharpe-like, hourly heatmap
+  let peak = 0, maxDrawdown = 0, maxDrawdownPct = 0;
+  let cum = 0;
+  for (const t of trades) {
+    cum += (t.realized_pnl || 0);
+    if (cum > peak) peak = cum;
+    const dd = peak - cum;
+    if (dd > maxDrawdown) maxDrawdown = dd;
+    if (peak > 0 && (dd / peak) > maxDrawdownPct) maxDrawdownPct = dd / peak;
+  }
+
+  const grossProfit = wins.reduce((s, t) => s + t.realized_pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((s, t) => s + t.realized_pnl, 0));
+  const profitFactor = grossLoss > 0 ? Number((grossProfit / grossLoss).toFixed(2)) : grossProfit > 0 ? Infinity : 0;
+
+  // Streaks
+  let currentStreak = 0, longestWinStreak = 0, longestLoseStreak = 0, tempStreak = 0, lastDir = null;
+  for (const t of trades) {
+    const dir = (t.realized_pnl || 0) > 0 ? 'win' : 'lose';
+    if (dir === lastDir) { tempStreak++; }
+    else { tempStreak = 1; lastDir = dir; }
+    if (dir === 'win' && tempStreak > longestWinStreak) longestWinStreak = tempStreak;
+    if (dir === 'lose' && tempStreak > longestLoseStreak) longestLoseStreak = tempStreak;
+  }
+  currentStreak = tempStreak * (lastDir === 'win' ? 1 : -1);
+
+  // Sharpe-like (daily returns std dev)
+  const dailyPnls = {};
+  for (const t of trades) {
+    const day = (t.timestamp || '').slice(0, 10);
+    if (!day) continue;
+    dailyPnls[day] = (dailyPnls[day] || 0) + (t.realized_pnl || 0);
+  }
+  const dailyReturns = Object.values(dailyPnls);
+  let sharpeRatio = 0;
+  if (dailyReturns.length > 1) {
+    const mean = dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length;
+    const variance = dailyReturns.reduce((s, v) => s + (v - mean) ** 2, 0) / (dailyReturns.length - 1);
+    const stdDev = Math.sqrt(variance);
+    sharpeRatio = stdDev > 0 ? Number((mean / stdDev * Math.sqrt(365)).toFixed(2)) : 0;
+  }
+
+  // Hourly heatmap (hour 0-23 -> pnl)
+  const hourlyPnl = Array(24).fill(0);
+  const hourlyCount = Array(24).fill(0);
+  for (const t of trades) {
+    const ts = t.timestamp || '';
+    const hourMatch = ts.match(/(\d{2}):\d{2}:\d{2}/);
+    if (hourMatch) {
+      const h = parseInt(hourMatch[1]);
+      hourlyPnl[h] += (t.realized_pnl || 0);
+      hourlyCount[h]++;
+    }
+  }
+
+  // Avg trade duration (if close_time exists)
+  let avgDurationMin = null;
+  const durTrades = trades.filter(t => t.open_time && t.timestamp);
+  if (durTrades.length) {
+    const totalMs = durTrades.reduce((s, t) => {
+      return s + (new Date(t.timestamp).getTime() - new Date(t.open_time).getTime());
+    }, 0);
+    avgDurationMin = Number((totalMs / durTrades.length / 60000).toFixed(1));
+  }
+
+  // Weekly PnL
+  const weeklyPnl = {};
+  for (const t of trades) {
+    const d = new Date(t.timestamp);
+    if (isNaN(d)) continue;
+    const startOfWeek = new Date(d);
+    startOfWeek.setDate(d.getDate() - d.getDay());
+    const key = startOfWeek.toISOString().slice(0, 10);
+    weeklyPnl[key] = (weeklyPnl[key] || 0) + (t.realized_pnl || 0);
+  }
+
   res.json({
     totalTrades,
     wins: wins.length,
@@ -485,12 +561,22 @@ app.get('/api/stats', (req, res) => {
     bestTrade,
     worstTrade,
     equityCurve,
-    bySymbol
+    bySymbol,
+    maxDrawdown: Number(maxDrawdown.toFixed(2)),
+    maxDrawdownPct: Number((maxDrawdownPct * 100).toFixed(1)),
+    profitFactor,
+    longestWinStreak,
+    longestLoseStreak,
+    currentStreak,
+    sharpeRatio,
+    hourlyPnl: hourlyPnl.map((v, i) => ({ hour: i, pnl: Number(v.toFixed(2)), trades: hourlyCount[i] })),
+    avgDurationMin,
+    weeklyPnl: Object.entries(weeklyPnl).map(([week, pnl]) => ({ week, pnl: Number(pnl.toFixed(2)) }))
   });
 });
 
 // API: daily PnL
-app.get('/api/daily-pnl', (req, res) => {
+app.get('/api/daily-pnl', liveRateLimiter, (req, res) => {
   const rows = db.prepare(`
     SELECT date(timestamp) as day, SUM(realized_pnl) as pnl, COUNT(*) as trades
     FROM trades
@@ -499,6 +585,64 @@ app.get('/api/daily-pnl', (req, res) => {
     LIMIT 30
   `).all();
   res.json(rows.reverse());
+});
+
+// API: export trades as CSV
+app.get('/api/trades/export', liveRateLimiter, (req, res) => {
+  const data = db.prepare('SELECT * FROM trades ORDER BY timestamp DESC').all();
+  const headers = ['timestamp', 'symbol', 'side', 'price', 'amount', 'realized_pnl', 'strategy', 'open_time'];
+  let csv = headers.join(',') + '\n';
+  for (const t of data) {
+    csv += headers.map(h => {
+      const v = t[h] ?? '';
+      return String(v).includes(',') ? `"${v}"` : v;
+    }).join(',') + '\n';
+  }
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=trades_export.csv');
+  res.send(csv);
+});
+
+// API: bot logs (last N lines from console captured in memory)
+const LOG_BUFFER_SIZE = 200;
+const logBuffer = [];
+const origLog = console.log;
+const origError = console.error;
+const origWarn = console.warn;
+function captureLog(level, args) {
+  const line = { ts: new Date().toISOString(), level, msg: args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ') };
+  logBuffer.push(line);
+  if (logBuffer.length > LOG_BUFFER_SIZE) logBuffer.shift();
+}
+console.log = (...args) => { captureLog('info', args); origLog.apply(console, args); };
+console.error = (...args) => { captureLog('error', args); origError.apply(console, args); };
+console.warn = (...args) => { captureLog('warn', args); origWarn.apply(console, args); };
+
+app.get('/api/logs', (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, LOG_BUFFER_SIZE);
+  res.json(logBuffer.slice(-limit));
+});
+
+// API: risk exposure (total margin used vs balance)
+app.get('/api/risk-exposure', liveRateLimiter, async (req, res) => {
+  try {
+    if (!global.exchange) return res.status(500).json({ error: 'Exchange not ready' });
+    const positions = db.prepare('SELECT * FROM active_positions').all();
+    const b = await getUsdcBalanceSafe();
+    let totalExposure = 0;
+    for (const p of positions) {
+      totalExposure += Math.abs((p.entry_price || 0) * (p.size || 0));
+    }
+    const exposurePct = b.total > 0 ? (totalExposure / b.total * 100) : 0;
+    res.json({
+      totalExposure: Number(totalExposure.toFixed(2)),
+      balanceTotal: Number(b.total.toFixed(2)),
+      exposurePct: Number(exposurePct.toFixed(1)),
+      openPositions: positions.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // API: settings

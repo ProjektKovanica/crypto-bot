@@ -6,102 +6,60 @@
   <title>Crypto Bot Terminal</title>
   <style>
     :root{
-      --bg:#000000;
-      --card:#0a0a0a;
-      --border:#1a3a1a;
-      --green:#00ff41;
-      --dim:#00aa2a;
-      --bright:#7dff7d;
-      --red:#ff3333;
-      --yellow:#ffcc00;
-      --text:#00ff41;
-      --muted:#006b1f;
+      --bg:#000000;--card:#0a0a0a;--border:#1a3a1a;
+      --green:#00ff41;--dim:#00aa2a;--bright:#7dff7d;
+      --red:#ff3333;--yellow:#ffcc00;--cyan:#00ffff;
+      --text:#00ff41;--muted:#006b1f;
     }
     *{box-sizing:border-box;margin:0;padding:0}
     body{
-      background:var(--bg);
-      color:var(--text);
+      background:var(--bg);color:var(--text);
       font-family:'Courier New',Consolas,'Liberation Mono',monospace;
-      font-size:13px;
-      line-height:1.5;
-      min-height:100vh;
+      font-size:13px;line-height:1.5;min-height:100vh;
     }
     ::selection{background:var(--green);color:#000}
     ::-webkit-scrollbar{width:6px;height:6px}
     ::-webkit-scrollbar-track{background:#0a0a0a}
     ::-webkit-scrollbar-thumb{background:#1a3a1a;border-radius:3px}
 
-    .wrap{max-width:1440px;margin:0 auto;padding:12px 16px}
+    .wrap{max-width:1500px;margin:0 auto;padding:10px 14px}
     .header{
-      border-bottom:1px solid var(--border);
-      padding-bottom:10px;
-      margin-bottom:14px;
-      display:flex;
-      justify-content:space-between;
-      align-items:center;
-      flex-wrap:wrap;
-      gap:8px;
+      border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:12px;
+      display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;
     }
-    .header h1{
-      font-size:16px;
-      font-weight:normal;
-      color:var(--green);
-    }
+    .header h1{font-size:15px;font-weight:normal;color:var(--green)}
     .header h1 .blink{animation:blink 1s step-end infinite}
     @keyframes blink{50%{opacity:0}}
-    .header .meta{font-size:11px;color:var(--muted)}
+    .header .meta{font-size:11px;color:var(--muted);display:flex;gap:10px;align-items:center}
 
-    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px}
+    .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:8px}
     .card{
-      grid-column:span 12;
-      background:var(--card);
-      border:1px solid var(--border);
-      padding:12px;
-      position:relative;
+      grid-column:span 12;background:var(--card);border:1px solid var(--border);
+      padding:10px;position:relative;overflow:hidden;
     }
     .card::before{
-      content:attr(data-title);
-      display:block;
-      font-size:11px;
-      color:var(--muted);
-      text-transform:uppercase;
-      letter-spacing:1px;
-      margin-bottom:8px;
-      border-bottom:1px dashed var(--border);
-      padding-bottom:4px;
+      content:attr(data-title);display:block;font-size:10px;color:var(--muted);
+      text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;
+      border-bottom:1px dashed var(--border);padding-bottom:3px;
     }
-    .col-2{grid-column:span 2}
-    .col-3{grid-column:span 3}
-    .col-4{grid-column:span 4}
-    .col-6{grid-column:span 6}
-    .col-8{grid-column:span 8}
-    .col-12{grid-column:span 12}
-    @media(max-width:960px){.col-2,.col-3,.col-4,.col-6,.col-8{grid-column:span 12}}
+    .col-2{grid-column:span 2}.col-3{grid-column:span 3}
+    .col-4{grid-column:span 4}.col-6{grid-column:span 6}
+    .col-8{grid-column:span 8}.col-12{grid-column:span 12}
+    @media(max-width:1100px){.col-2{grid-column:span 4}.col-3{grid-column:span 6}}
+    @media(max-width:768px){.col-2,.col-3,.col-4,.col-6,.col-8{grid-column:span 12}}
 
-    .kpi{font-size:22px;font-weight:bold;color:var(--bright)}
+    .kpi{font-size:20px;font-weight:bold;color:var(--bright)}
     .kpi.neg{color:var(--red)}
-    .kpi-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+    .kpi-sub{font-size:10px;color:var(--muted);margin-top:2px}
 
-    .status-bar{
-      display:flex;gap:16px;align-items:center;flex-wrap:wrap;
-      font-size:12px;
-    }
-    .status-dot{
-      width:8px;height:8px;border-radius:50%;
-      display:inline-block;margin-right:4px;
-    }
+    .status-bar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px}
+    .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
     .status-dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
     .status-dot.off{background:var(--red);box-shadow:0 0 6px var(--red)}
 
     button{
-      background:transparent;
-      color:var(--green);
-      border:1px solid var(--border);
-      padding:6px 12px;
-      font-family:inherit;
-      font-size:12px;
-      cursor:pointer;
-      transition:all .15s;
+      background:transparent;color:var(--green);border:1px solid var(--border);
+      padding:5px 10px;font-family:inherit;font-size:11px;cursor:pointer;transition:all .15s;
     }
     button:hover{background:#0a2a0a;border-color:var(--green)}
     button.danger{color:var(--red);border-color:#3a1a1a}
@@ -109,70 +67,84 @@
     button.warn{color:var(--yellow);border-color:#3a3a1a}
     button.warn:hover{background:#1a1a0a;border-color:var(--yellow)}
 
-    table{width:100%;border-collapse:collapse;font-size:12px}
-    th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #111}
+    table{width:100%;border-collapse:collapse;font-size:11px}
+    th,td{text-align:left;padding:5px 6px;border-bottom:1px solid #111}
     th{color:var(--muted);font-weight:normal;text-transform:uppercase;font-size:10px;letter-spacing:1px}
     tr:hover td{background:#050f05}
 
-    .pnl-pos{color:#00ff41}
-    .pnl-neg{color:#ff3333}
+    .pnl-pos{color:#00ff41}.pnl-neg{color:#ff3333}
 
     input{
-      background:#050505;
-      border:1px solid var(--border);
-      color:var(--green);
-      font-family:inherit;
-      font-size:12px;
-      padding:6px 8px;
-      width:100%;
+      background:#050505;border:1px solid var(--border);color:var(--green);
+      font-family:inherit;font-size:11px;padding:5px 7px;width:100%;
     }
     input:focus{outline:none;border-color:var(--green)}
-    label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:3px}
+    label{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:2px}
 
-    .chart-container{height:120px;position:relative;overflow:hidden}
+    .chart-container{position:relative;overflow:hidden}
     .chart-canvas{width:100%;height:100%}
 
-    .actions-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-    .log-line{font-size:11px;color:var(--dim);margin:2px 0}
-    .log-line .ts{color:var(--muted)}
+    .actions-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 
-    .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:10px}
+    .pair-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+    .pair-card{border:1px solid var(--border);padding:8px;background:#050505}
+    .pair-card .sym{font-size:12px;font-weight:bold;color:var(--bright)}
+    .pair-card .price{font-size:11px;color:var(--dim)}
+    .pair-chart{height:50px;margin-top:4px}
+
+    .heatmap{display:grid;grid-template-columns:repeat(24,1fr);gap:2px}
+    .heatmap-cell{
+      aspect-ratio:1;display:flex;align-items:center;justify-content:center;
+      font-size:8px;border:1px solid #111;position:relative;
+    }
+    .heatmap-cell .tooltip{
+      display:none;position:absolute;bottom:110%;left:50%;transform:translateX(-50%);
+      background:#111;border:1px solid var(--border);padding:3px 6px;font-size:9px;
+      white-space:nowrap;z-index:10;color:var(--green);
+    }
+    .heatmap-cell:hover .tooltip{display:block}
+
+    .log-panel{
+      max-height:200px;overflow-y:auto;font-size:10px;line-height:1.6;
+      background:#020202;padding:6px;border:1px solid #111;
+    }
+    .log-line{color:var(--dim)}.log-line .ts{color:var(--muted)}
+    .log-line.error{color:var(--red)}.log-line.warn{color:var(--yellow)}
+
+    .risk-bar{height:16px;background:#111;border:1px solid var(--border);position:relative;margin-top:6px}
+    .risk-bar-fill{height:100%;transition:width .3s}
+    .risk-bar-label{position:absolute;right:4px;top:0;font-size:10px;line-height:16px;color:var(--bright)}
+
+    .progress-ring{display:inline-block;position:relative;width:60px;height:60px}
+    .progress-ring svg{transform:rotate(-90deg)}
+    .progress-ring .value{
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      font-size:13px;font-weight:bold;
+    }
+
+    .tabs{display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:8px}
     .tab{
-      padding:6px 14px;font-size:11px;cursor:pointer;
-      color:var(--muted);border:1px solid transparent;border-bottom:none;
-      text-transform:uppercase;letter-spacing:1px;
+      padding:5px 12px;font-size:10px;cursor:pointer;color:var(--muted);
+      border:1px solid transparent;border-bottom:none;text-transform:uppercase;letter-spacing:1px;
     }
     .tab.active{color:var(--green);border-color:var(--border);background:var(--card)}
-    .tab-content{display:none}
-    .tab-content.active{display:block}
-
-    .pair-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-    .pair-card{
-      border:1px solid var(--border);padding:10px;background:#050505;
-    }
-    .pair-card .sym{font-size:13px;font-weight:bold;color:var(--bright);margin-bottom:4px}
-    .pair-card .price{font-size:11px;color:var(--dim)}
-    .pair-chart{height:60px;margin-top:6px}
-
-    .stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
-    .stat-item{border:1px solid var(--border);padding:8px;background:#050505}
-    .stat-item .label{font-size:10px;color:var(--muted);text-transform:uppercase}
-    .stat-item .val{font-size:16px;font-weight:bold;margin-top:2px}
+    .tab-content{display:none}.tab-content.active{display:block}
   </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
-    <h1>[ CRYPTO-BOT TERMINAL ]<span class="blink">_</span></h1>
+    <h1>┌─[ CRYPTO-BOT TERMINAL v2.0 ]<span class="blink">█</span></h1>
     <div class="meta">
-      <span id="clock"></span> | 
-      <span id="uptimeDisplay">uptime: --</span> |
-      <button onclick="changeApiKey()" style="border:none;padding:0;font-size:11px;color:var(--muted)">🔑 API Key</button>
+      <span id="clock"></span>
+      <span>│ uptime: <span id="uptimeDisplay">--</span></span>
+      <span>│ refresh: 15s</span>
+      <button onclick="changeApiKey()" style="border:none;padding:0;font-size:10px;color:var(--muted)">🔑 key</button>
     </div>
   </div>
 
   <!-- STATUS BAR -->
-  <div class="card col-12" data-title="System Status" style="margin-bottom:10px">
+  <div class="card col-12" data-title="System Status" style="margin-bottom:8px">
     <div class="status-bar">
       <span><span id="statusDot" class="status-dot off"></span><span id="statusText">OFFLINE</span></span>
       <span style="color:var(--muted)">│</span>
@@ -182,24 +154,26 @@
       <span style="color:var(--muted)">│</span>
       <span>Last: <span id="lastEnd">-</span></span>
       <span style="color:var(--muted)">│</span>
+      <span>Positions: <span id="posCount">0</span></span>
       <div class="actions-row" style="margin-left:auto">
         <button class="warn" onclick="pauseBot()">⏸ PAUSE</button>
         <button onclick="resumeBot()">▶ RESUME</button>
-        <button class="danger" onclick="emergencyStop()">⚠ EMERGENCY STOP</button>
-        <button onclick="refreshAll()">↻ REFRESH</button>
+        <button class="danger" onclick="emergencyStop()">⚠ KILL ALL</button>
+        <button onclick="refreshAll()">↻ SYNC</button>
+        <button onclick="exportTrades()">📥 CSV</button>
       </div>
     </div>
   </div>
 
   <div class="grid">
-    <!-- KPIs -->
-    <div class="card col-2" data-title="Balance Free">
+    <!-- KPIs ROW 1 -->
+    <div class="card col-2" data-title="Free Balance">
       <div id="kpiFree" class="kpi">$0.00</div>
     </div>
-    <div class="card col-2" data-title="Balance Used">
+    <div class="card col-2" data-title="Used (Margin)">
       <div id="kpiUsed" class="kpi">$0.00</div>
     </div>
-    <div class="card col-2" data-title="Balance Total">
+    <div class="card col-2" data-title="Total Equity">
       <div id="kpiTotal" class="kpi">$0.00</div>
     </div>
     <div class="card col-2" data-title="Total PnL">
@@ -212,29 +186,66 @@
       <div id="kpiWinRate" class="kpi">0%</div>
     </div>
 
-    <!-- EQUITY CURVE -->
+    <!-- KPIs ROW 2 -->
+    <div class="card col-2" data-title="Profit Factor">
+      <div id="kpiPF" class="kpi">0</div>
+    </div>
+    <div class="card col-2" data-title="Max Drawdown">
+      <div id="kpiDD" class="kpi">$0</div>
+      <div id="kpiDDpct" class="kpi-sub">0%</div>
+    </div>
+    <div class="card col-2" data-title="Sharpe Ratio">
+      <div id="kpiSharpe" class="kpi">0</div>
+    </div>
+    <div class="card col-2" data-title="Streak">
+      <div id="kpiStreak" class="kpi">0</div>
+      <div id="kpiStreakInfo" class="kpi-sub">best W:0 L:0</div>
+    </div>
+    <div class="card col-2" data-title="Avg Duration">
+      <div id="kpiDuration" class="kpi">--</div>
+    </div>
+    <div class="card col-2" data-title="Total Trades">
+      <div id="kpiTradeCount" class="kpi">0</div>
+      <div id="kpiWL" class="kpi-sub">W:0 L:0</div>
+    </div>
+
+    <!-- EQUITY CURVE + RISK -->
     <div class="card col-8" data-title="Equity Curve (Cumulative PnL)">
-      <div class="chart-container" style="height:180px">
+      <div class="chart-container" style="height:160px">
         <canvas id="equityChart" class="chart-canvas"></canvas>
       </div>
     </div>
-
-    <!-- QUICK STATS -->
-    <div class="card col-4" data-title="Performance Stats">
-      <div id="statsPanel" style="font-size:12px;line-height:2">
-        <div>Total Trades: <span id="statTotal">0</span></div>
-        <div>Wins: <span id="statWins" class="pnl-pos">0</span> | Losses: <span id="statLosses" class="pnl-neg">0</span></div>
-        <div>Avg Win: <span id="statAvgWin" class="pnl-pos">$0</span></div>
-        <div>Avg Loss: <span id="statAvgLoss" class="pnl-neg">$0</span></div>
-        <div>Best: <span id="statBest" class="pnl-pos">$0</span></div>
-        <div>Worst: <span id="statWorst" class="pnl-neg">$0</span></div>
+    <div class="card col-4" data-title="Risk & Exposure">
+      <div style="margin-bottom:8px">
+        <span style="font-size:11px">Exposure: <span id="exposurePct">0</span>% of equity</span>
+        <div class="risk-bar">
+          <div id="riskBarFill" class="risk-bar-fill" style="width:0%;background:var(--green)"></div>
+          <span class="risk-bar-label" id="riskBarLabel">0%</span>
+        </div>
+      </div>
+      <div style="font-size:11px;line-height:2;margin-top:10px">
+        <div>Open Positions: <span id="riskPositions">0</span></div>
+        <div>Total Exposure: $<span id="riskExposure">0</span></div>
+        <div>Available: $<span id="riskAvailable">0</span></div>
+      </div>
+      <div style="margin-top:10px;font-size:10px;color:var(--muted)">
+        <div>Avg Win: <span id="statAvgWin" class="pnl-pos">$0</span> | Avg Loss: <span id="statAvgLoss" class="pnl-neg">$0</span></div>
+        <div>Best: <span id="statBest" class="pnl-pos">$0</span> | Worst: <span id="statWorst" class="pnl-neg">$0</span></div>
       </div>
     </div>
 
-    <!-- DAILY PNL BAR CHART -->
-    <div class="card col-12" data-title="Daily PnL (Last 30 Days)">
-      <div class="chart-container" style="height:140px">
+    <!-- DAILY PNL -->
+    <div class="card col-8" data-title="Daily PnL (Bar Chart)">
+      <div class="chart-container" style="height:120px">
         <canvas id="dailyPnlChart" class="chart-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- HOURLY HEATMAP -->
+    <div class="card col-4" data-title="Hourly Performance (UTC)">
+      <div class="heatmap" id="hourlyHeatmap"></div>
+      <div style="margin-top:4px;font-size:9px;color:var(--muted);display:flex;justify-content:space-between">
+        <span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span>
       </div>
     </div>
 
@@ -243,42 +254,52 @@
       <table>
         <thead>
           <tr>
-            <th>Symbol</th><th>Side</th><th>Entry</th><th>Size</th>
-            <th>SL</th><th>TP</th><th>Unrealized PnL</th><th>Open Time</th><th>Actions</th>
+            <th>Symbol</th><th>Side</th><th>Entry</th><th>Size</th><th>Notional</th>
+            <th>SL</th><th>TP</th><th>Unrealized PnL</th><th>ROI%</th><th>Duration</th><th>Actions</th>
           </tr>
         </thead>
         <tbody id="positionsBody"></tbody>
       </table>
     </div>
 
-    <!-- PAIR CHARTS -->
-    <div class="card col-12" data-title="Pair Overview">
+    <!-- PAIR OVERVIEW -->
+    <div class="card col-12" data-title="Pair Overview (Live Prices)">
       <div class="pair-grid" id="pairGrid"></div>
     </div>
 
     <!-- PER-SYMBOL STATS -->
-    <div class="card col-12" data-title="Statistics by Symbol">
+    <div class="card col-6" data-title="Statistics by Symbol">
       <table>
-        <thead>
-          <tr><th>Symbol</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win Rate</th><th>PnL</th></tr>
-        </thead>
+        <thead><tr><th>Symbol</th><th>Trades</th><th>Wins</th><th>Losses</th><th>Win%</th><th>PnL</th></tr></thead>
         <tbody id="symbolStatsBody"></tbody>
       </table>
     </div>
 
-    <!-- TRADES -->
+    <!-- WEEKLY PERFORMANCE -->
+    <div class="card col-6" data-title="Weekly PnL">
+      <div class="chart-container" style="height:100px">
+        <canvas id="weeklyChart" class="chart-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- TRADES LOG -->
     <div class="card col-12" data-title="Recent Trades">
       <table>
-        <thead>
-          <tr><th>Time</th><th>Symbol</th><th>Side</th><th>Price</th><th>Amount</th><th>PnL</th></tr>
-        </thead>
+        <thead><tr><th>Time</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>Size</th><th>PnL</th><th>Strategy</th></tr></thead>
         <tbody id="tradesBody"></tbody>
       </table>
     </div>
 
+    <!-- LIVE LOGS -->
+    <div class="card col-12" data-title="Bot Logs (Live Feed)">
+      <div class="log-panel" id="logPanel">
+        <div class="log-line" style="color:var(--muted)">Waiting for log data...</div>
+      </div>
+    </div>
+
     <!-- SETTINGS -->
-    <div class="card col-12" data-title="Bot Settings">
-      <div class="grid" style="gap:8px">
+    <div class="card col-12" data-title="Configuration">
+      <div class="grid" style="gap:6px">
         <div class="col-3"><label>RISK_PERCENT</label><input id="RISK_PERCENT" /></div>
         <div class="col-3"><label>MAX_LEVERAGE</label><input id="MAX_LEVERAGE" /></div>
         <div class="col-3"><label>LIQUIDATION_SAFETY_FACTOR</label><input id="LIQUIDATION_SAFETY_FACTOR" /></div>
@@ -286,26 +307,23 @@
         <div class="col-3"><label>COOLDOWN_SECONDS</label><input id="COOLDOWN_SECONDS" /></div>
         <div class="col-3"><label>TRADING_HOURS</label><input id="TRADING_HOURS" /></div>
         <div class="col-3"><label>MAX_DAILY_LOSS_PERCENT</label><input id="MAX_DAILY_LOSS_PERCENT" /></div>
-        <div class="col-3" style="display:flex;align-items:flex-end;gap:8px">
+        <div class="col-3" style="display:flex;align-items:flex-end;gap:6px">
           <button onclick="saveSettings()">💾 SAVE</button>
-          <span id="settingsMsg" style="font-size:11px;color:var(--dim)"></span>
+          <span id="settingsMsg" style="font-size:10px;color:var(--dim)"></span>
         </div>
       </div>
     </div>
   </div>
 
-  <div style="text-align:center;margin-top:16px;font-size:10px;color:var(--muted)">
-    [ crypto-bot terminal v2.0 ] — auto-refresh: 15s
+  <div style="text-align:center;margin-top:14px;font-size:9px;color:var(--muted)">
+    └── [ crypto-bot terminal v2.0 ] ── auto-refresh: 15s ── canvas charts ── no external deps ──┘
   </div>
 </div>
 
 <script>
-// ---------- API KEY ----------
+// ---------- API ----------
 let API_KEY = localStorage.getItem('apiKey') || '';
-if (!API_KEY) {
-  API_KEY = prompt('Enter API key');
-  if (API_KEY) localStorage.setItem('apiKey', API_KEY);
-}
+if (!API_KEY) { API_KEY = prompt('Enter API key'); if (API_KEY) localStorage.setItem('apiKey', API_KEY); }
 
 function changeApiKey() {
   const k = prompt('Enter new API key');
@@ -327,98 +345,81 @@ async function apiFetch(url, options = {}) {
 
 function fmt(v, d = 2) { return Number(v || 0).toFixed(d); }
 function pnlClass(v) { return Number(v) >= 0 ? 'pnl-pos' : 'pnl-neg'; }
+function pnlSign(v) { return v >= 0 ? `+$${fmt(v)}` : `-$${fmt(Math.abs(v))}`; }
 
 // ---------- CLOCK ----------
 function updateClock() {
-  const now = new Date();
-  document.getElementById('clock').textContent = now.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  document.getElementById('clock').textContent = new Date().toISOString().replace('T',' ').slice(0,19)+' UTC';
 }
-setInterval(updateClock, 1000);
-updateClock();
+setInterval(updateClock, 1000); updateClock();
 
-// ---------- CANVAS CHART HELPERS ----------
-function drawLineChart(canvasId, data, opts = {}) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas || !data.length) return;
+// ---------- CHART HELPERS ----------
+function getCanvas(id) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return null;
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   ctx.scale(dpr, dpr);
-  const W = rect.width, H = rect.height;
+  return { ctx, W: rect.width, H: rect.height };
+}
 
+function drawLineChart(id, data, opts = {}) {
+  const c = getCanvas(id);
+  if (!c || !data.length) return;
+  const { ctx, W, H } = c;
   const values = data.map(d => d.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+  const min = Math.min(...values), max = Math.max(...values);
   const range = max - min || 1;
-  const pad = 10;
+  const pad = 8;
 
   ctx.clearRect(0, 0, W, H);
-
-  // Grid lines
-  ctx.strokeStyle = '#0a2a0a';
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad + (i / 4) * (H - 2 * pad);
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-  }
-
-  // Zero line if applicable
+  // grid
+  ctx.strokeStyle = '#0a1a0a'; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) { const y = pad + (i/4)*(H-2*pad); ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+  // zero line
   if (min < 0 && max > 0) {
-    const zeroY = H - pad - ((0 - min) / range) * (H - 2 * pad);
-    ctx.strokeStyle = '#333';
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath(); ctx.moveTo(0, zeroY); ctx.lineTo(W, zeroY); ctx.stroke();
-    ctx.setLineDash([]);
+    const zy = H - pad - ((0-min)/range)*(H-2*pad);
+    ctx.strokeStyle='#222';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(0,zy);ctx.lineTo(W,zy);ctx.stroke();ctx.setLineDash([]);
   }
-
-  // Line
-  ctx.strokeStyle = opts.color || '#00ff41';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
+  // line
+  ctx.strokeStyle = opts.color || '#00ff41'; ctx.lineWidth = 1.5; ctx.beginPath();
   for (let i = 0; i < values.length; i++) {
-    const x = (i / (values.length - 1)) * W;
-    const y = H - pad - ((values[i] - min) / range) * (H - 2 * pad);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    const x = values.length === 1 ? W/2 : (i/(values.length-1))*W;
+    const y = H - pad - ((values[i]-min)/range)*(H-2*pad);
+    i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
   }
   ctx.stroke();
-
-  // Fill under
-  const lastX = W, lastY = H - pad - ((values[values.length - 1] - min) / range) * (H - 2 * pad);
-  ctx.lineTo(lastX, H);
-  ctx.lineTo(0, H);
-  ctx.closePath();
-  ctx.fillStyle = opts.fill || 'rgba(0,255,65,0.05)';
-  ctx.fill();
+  // fill
+  ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.closePath();
+  ctx.fillStyle = opts.fill || 'rgba(0,255,65,0.04)'; ctx.fill();
+  // end value label
+  const lastVal = values[values.length-1];
+  ctx.fillStyle = lastVal >= 0 ? '#00ff41' : '#ff3333';
+  ctx.font = '10px monospace';
+  ctx.fillText('$'+fmt(lastVal), W - 50, 12);
 }
 
-function drawBarChart(canvasId, data) {
-  const canvas = document.getElementById(canvasId);
-  if (!canvas || !data.length) return;
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width, H = rect.height;
-
+function drawBarChart(id, data) {
+  const c = getCanvas(id);
+  if (!c || !data.length) return;
+  const { ctx, W, H } = c;
   const values = data.map(d => d.value);
   const maxAbs = Math.max(Math.abs(Math.min(...values)), Math.abs(Math.max(...values))) || 1;
-  const pad = 10;
-  const barW = Math.max(2, (W - 20) / values.length - 2);
+  const pad = 8;
+  const gap = 2;
+  const barW = Math.max(2, (W - 2*pad) / values.length - gap);
   const midY = H / 2;
 
   ctx.clearRect(0, 0, W, H);
-  // zero line
-  ctx.strokeStyle = '#1a3a1a';
-  ctx.beginPath(); ctx.moveTo(0, midY); ctx.lineTo(W, midY); ctx.stroke();
+  ctx.strokeStyle = '#1a3a1a'; ctx.beginPath(); ctx.moveTo(0,midY); ctx.lineTo(W,midY); ctx.stroke();
 
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
-    const barH = (Math.abs(v) / maxAbs) * (H / 2 - pad);
-    const x = pad + i * ((W - 2 * pad) / values.length);
+    const barH = (Math.abs(v)/maxAbs)*(H/2-pad);
+    const x = pad + i*((W-2*pad)/values.length);
     const y = v >= 0 ? midY - barH : midY;
     ctx.fillStyle = v >= 0 ? '#00ff41' : '#ff3333';
     ctx.fillRect(x, y, barW, barH);
@@ -430,23 +431,17 @@ function drawMiniChart(canvas, prices) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.width = rect.width*dpr; canvas.height = rect.height*dpr;
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
-
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range = max - min || 1;
-
-  const isUp = prices[prices.length - 1] >= prices[0];
+  const min = Math.min(...prices), max = Math.max(...prices), range = max-min||1;
+  const isUp = prices[prices.length-1] >= prices[0];
   ctx.strokeStyle = isUp ? '#00ff41' : '#ff3333';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
+  ctx.lineWidth = 1; ctx.beginPath();
   for (let i = 0; i < prices.length; i++) {
-    const x = (i / (prices.length - 1)) * W;
-    const y = H - ((prices[i] - min) / range) * H;
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    const x = (i/(prices.length-1))*W;
+    const y = H - ((prices[i]-min)/range)*H;
+    i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
   }
   ctx.stroke();
 }
@@ -454,13 +449,9 @@ function drawMiniChart(canvas, prices) {
 // ---------- LOADERS ----------
 async function loadStatus() {
   const s = await apiFetch('/api/status');
-  const dot = document.getElementById('statusDot');
-  const txt = document.getElementById('statusText');
-  if (s.status === 'RUNNING') {
-    dot.className = 'status-dot on'; txt.textContent = 'RUNNING';
-  } else {
-    dot.className = 'status-dot off'; txt.textContent = 'STOPPED';
-  }
+  const dot = document.getElementById('statusDot'), txt = document.getElementById('statusText');
+  if (s.status === 'RUNNING') { dot.className='status-dot on'; txt.textContent='RUNNING'; }
+  else { dot.className='status-dot off'; txt.textContent='STOPPED'; }
   document.getElementById('cycleCounter').textContent = s.cycleCounter ?? '-';
   document.getElementById('cycleRunning').textContent = s.isCycleRunning ? 'YES' : 'NO';
   document.getElementById('lastEnd').textContent = s.lastCycleEndedAt || '-';
@@ -476,205 +467,232 @@ async function loadBalance() {
 
 async function loadPositions() {
   const rows = await apiFetch('/api/positions');
+  document.getElementById('posCount').textContent = rows.length;
   let pnlData = [];
-  try { pnlData = await apiFetch('/api/unrealized-pnl'); } catch (_) {}
-  const pnlMap = {};
-  for (const p of pnlData) pnlMap[p.symbol] = p;
+  try { pnlData = await apiFetch('/api/unrealized-pnl'); } catch(_){}
+  const pnlMap = {}; for (const p of pnlData) pnlMap[p.symbol] = p;
 
   const tb = document.getElementById('positionsBody');
   tb.innerHTML = '';
-  if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="9" style="color:var(--muted)">No active positions.</td></tr>`;
-    return;
-  }
+  if (!rows.length) { tb.innerHTML=`<tr><td colspan="11" style="color:var(--muted)">── no active positions ──</td></tr>`; return; }
   for (const p of rows) {
     const upnl = pnlMap[p.symbol]?.unrealizedPnl;
-    const upnlStr = upnl != null ? `$${fmt(upnl)}` : '--';
-    const cls = upnl != null ? pnlClass(upnl) : '';
+    const markPrice = pnlMap[p.symbol]?.markPrice;
+    const notional = (p.entry_price||0)*(p.size||0);
+    const roi = notional > 0 && upnl != null ? (upnl/notional*100) : null;
+    const duration = p.open_time ? getElapsed(p.open_time) : '--';
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${p.symbol || ''}</td>
-      <td>${p.side || ''}</td>
-      <td>${fmt(p.entry_price, 6)}</td>
-      <td>${fmt(p.size, 6)}</td>
-      <td>${p.stop_loss == null ? '-' : fmt(p.stop_loss, 6)}</td>
-      <td>${p.take_profit == null ? '-' : fmt(p.take_profit, 6)}</td>
-      <td class="${cls}">${upnlStr}</td>
-      <td>${p.open_time || '-'}</td>
-      <td>
-        <div class="actions-row">
-          <button onclick="moveBE('${(p.symbol||'').replace(/'/g,"\\'")}')">SL→BE</button>
-          <button class="danger" onclick="closePos('${(p.symbol||'').replace(/'/g,"\\'")}')">CLOSE</button>
-        </div>
-      </td>`;
+      <td>${p.symbol||''}</td>
+      <td style="color:${p.side==='buy'?'var(--green)':'var(--red)'}">${(p.side||'').toUpperCase()}</td>
+      <td>${fmt(p.entry_price,4)}</td>
+      <td>${fmt(p.size,4)}</td>
+      <td>$${fmt(notional)}</td>
+      <td>${p.stop_loss==null?'-':fmt(p.stop_loss,4)}</td>
+      <td>${p.take_profit==null?'-':fmt(p.take_profit,4)}</td>
+      <td class="${upnl!=null?pnlClass(upnl):''}">${upnl!=null?pnlSign(upnl):'--'}</td>
+      <td class="${roi!=null?pnlClass(roi):''}">${roi!=null?fmt(roi,1)+'%':'--'}</td>
+      <td>${duration}</td>
+      <td><div class="actions-row">
+        <button onclick="moveBE('${esc(p.symbol)}')">BE</button>
+        <button class="danger" onclick="closePos('${esc(p.symbol)}')">X</button>
+      </div></td>`;
     tb.appendChild(tr);
   }
 }
 
+function esc(s) { return (s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+function getElapsed(openTime) {
+  const ms = Date.now() - new Date(openTime).getTime();
+  if (isNaN(ms) || ms < 0) return '--';
+  const min = Math.floor(ms/60000), h = Math.floor(min/60), d = Math.floor(h/24);
+  if (d > 0) return `${d}d ${h%24}h`;
+  if (h > 0) return `${h}h ${min%60}m`;
+  return `${min}m`;
+}
+
 async function loadStats() {
   const s = await apiFetch('/api/stats');
-  document.getElementById('statTotal').textContent = s.totalTrades;
-  document.getElementById('statWins').textContent = s.wins;
-  document.getElementById('statLosses').textContent = s.losses;
+  // KPIs
+  const pEl = document.getElementById('kpiTotalPnl');
+  pEl.textContent = pnlSign(s.totalPnl); pEl.className = 'kpi '+(s.totalPnl>=0?'':'neg');
+  document.getElementById('kpiWinRate').textContent = `${s.winRate}%`;
+  document.getElementById('kpiPF').textContent = s.profitFactor === Infinity ? '∞' : s.profitFactor;
+  const ddEl = document.getElementById('kpiDD');
+  ddEl.textContent = `$${fmt(s.maxDrawdown)}`; ddEl.className = 'kpi neg';
+  document.getElementById('kpiDDpct').textContent = `${s.maxDrawdownPct}% of peak`;
+  document.getElementById('kpiSharpe').textContent = s.sharpeRatio;
+  const streakEl = document.getElementById('kpiStreak');
+  streakEl.textContent = s.currentStreak > 0 ? `+${s.currentStreak}W` : s.currentStreak < 0 ? `${s.currentStreak}L` : '0';
+  streakEl.className = 'kpi '+(s.currentStreak>=0?'':'neg');
+  document.getElementById('kpiStreakInfo').textContent = `best W:${s.longestWinStreak} L:${s.longestLoseStreak}`;
+  document.getElementById('kpiDuration').textContent = s.avgDurationMin != null ? `${s.avgDurationMin}m` : '--';
+  document.getElementById('kpiTradeCount').textContent = s.totalTrades;
+  document.getElementById('kpiWL').textContent = `W:${s.wins} L:${s.losses}`;
   document.getElementById('statAvgWin').textContent = `$${fmt(s.avgWin)}`;
   document.getElementById('statAvgLoss').textContent = `$${fmt(s.avgLoss)}`;
-  document.getElementById('statBest').textContent = s.bestTrade ? `$${fmt(s.bestTrade.realized_pnl)}` : '--';
-  document.getElementById('statWorst').textContent = s.worstTrade ? `$${fmt(s.worstTrade.realized_pnl)}` : '--';
-
-  const pnlEl = document.getElementById('kpiTotalPnl');
-  pnlEl.textContent = `$${fmt(s.totalPnl)}`;
-  pnlEl.className = 'kpi ' + (s.totalPnl >= 0 ? '' : 'neg');
-
-  const wrEl = document.getElementById('kpiWinRate');
-  wrEl.textContent = `${s.winRate}%`;
+  document.getElementById('statBest').textContent = s.bestTrade?`$${fmt(s.bestTrade.realized_pnl)}`:'--';
+  document.getElementById('statWorst').textContent = s.worstTrade?`$${fmt(s.worstTrade.realized_pnl)}`:'--';
 
   // Equity curve
-  if (s.equityCurve && s.equityCurve.length) {
-    drawLineChart('equityChart', s.equityCurve.map(e => ({ value: e.cumulative_pnl })));
+  if (s.equityCurve?.length) drawLineChart('equityChart', s.equityCurve.map(e=>({value:e.cumulative_pnl})));
+
+  // Symbol stats table
+  const stb = document.getElementById('symbolStatsBody'); stb.innerHTML='';
+  const sorted = Object.entries(s.bySymbol||{}).sort((a,b)=>b[1].pnl-a[1].pnl);
+  for (const [sym,d] of sorted) {
+    const tr = document.createElement('tr');
+    tr.innerHTML=`<td>${sym}</td><td>${d.trades}</td><td class="pnl-pos">${d.wins}</td><td class="pnl-neg">${d.losses}</td><td>${d.winRate}%</td><td class="${pnlClass(d.pnl)}">$${fmt(d.pnl)}</td>`;
+    stb.appendChild(tr);
   }
 
-  // Symbol stats
-  const stb = document.getElementById('symbolStatsBody');
-  stb.innerHTML = '';
-  for (const [sym, d] of Object.entries(s.bySymbol || {})) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${sym}</td><td>${d.trades}</td>
-      <td class="pnl-pos">${d.wins}</td><td class="pnl-neg">${d.losses}</td>
-      <td>${d.winRate}%</td>
-      <td class="${pnlClass(d.pnl)}">$${fmt(d.pnl)}</td>`;
-    stb.appendChild(tr);
+  // Hourly heatmap
+  if (s.hourlyPnl) renderHeatmap(s.hourlyPnl);
+
+  // Weekly chart
+  if (s.weeklyPnl?.length) drawBarChart('weeklyChart', s.weeklyPnl.map(w=>({value:w.pnl})));
+}
+
+function renderHeatmap(data) {
+  const el = document.getElementById('hourlyHeatmap'); el.innerHTML='';
+  const maxAbs = Math.max(...data.map(d=>Math.abs(d.pnl))) || 1;
+  for (const d of data) {
+    const cell = document.createElement('div');
+    cell.className = 'heatmap-cell';
+    const intensity = Math.min(1, Math.abs(d.pnl)/maxAbs);
+    if (d.pnl >= 0) cell.style.background = `rgba(0,255,65,${intensity*0.6})`;
+    else cell.style.background = `rgba(255,51,51,${intensity*0.6})`;
+    cell.innerHTML = `<span class="tooltip">${d.hour}:00 | $${fmt(d.pnl)} | ${d.trades} trades</span>`;
+    el.appendChild(cell);
   }
 }
 
 async function loadDailyPnl() {
   const data = await apiFetch('/api/daily-pnl');
   if (data.length) {
-    drawBarChart('dailyPnlChart', data.map(d => ({ value: d.pnl })));
-    // today's PnL
-    const today = new Date().toISOString().slice(0, 10);
-    const todayData = data.find(d => d.day === today);
+    drawBarChart('dailyPnlChart', data.map(d=>({value:d.pnl})));
+    const today = new Date().toISOString().slice(0,10);
+    const todayData = data.find(d=>d.day===today);
+    const tVal = todayData?todayData.pnl:0;
     const tEl = document.getElementById('kpiTodayPnl');
-    const tVal = todayData ? todayData.pnl : 0;
-    tEl.textContent = `$${fmt(tVal)}`;
-    tEl.className = 'kpi ' + (tVal >= 0 ? '' : 'neg');
+    tEl.textContent = pnlSign(tVal); tEl.className='kpi '+(tVal>=0?'':'neg');
   }
 }
 
+async function loadRiskExposure() {
+  try {
+    const r = await apiFetch('/api/risk-exposure');
+    document.getElementById('exposurePct').textContent = fmt(r.exposurePct,1);
+    document.getElementById('riskPositions').textContent = r.openPositions;
+    document.getElementById('riskExposure').textContent = fmt(r.totalExposure);
+    document.getElementById('riskAvailable').textContent = fmt(r.balanceTotal - r.totalExposure);
+    const pct = Math.min(100, r.exposurePct);
+    const fill = document.getElementById('riskBarFill');
+    fill.style.width = pct+'%';
+    fill.style.background = pct < 50 ? 'var(--green)' : pct < 80 ? 'var(--yellow)' : 'var(--red)';
+    document.getElementById('riskBarLabel').textContent = fmt(r.exposurePct,1)+'%';
+  } catch(_){}
+}
+
 async function loadPairCharts() {
-  let status;
-  try { status = await apiFetch('/api/status'); } catch (_) { return; }
+  let status; try { status = await apiFetch('/api/status'); } catch(_){ return; }
   const prices = status.lastPrices || {};
   const pairs = await apiFetch('/api/pairs');
-  const grid = document.getElementById('pairGrid');
-  grid.innerHTML = '';
-
+  const grid = document.getElementById('pairGrid'); grid.innerHTML='';
   for (const pair of pairs) {
-    const div = document.createElement('div');
-    div.className = 'pair-card';
+    const div = document.createElement('div'); div.className='pair-card';
     const price = prices[pair];
-    div.innerHTML = `
-      <div class="sym">${pair}</div>
-      <div class="price">${price ? '$' + fmt(price, 4) : '--'}</div>
-      <div class="pair-chart"><canvas id="chart-${pair.replace(/\//g,'-')}" style="width:100%;height:100%"></canvas></div>
-    `;
+    div.innerHTML=`<div class="sym">${pair}</div><div class="price">${price?'$'+fmt(price,price>100?2:4):'--'}</div><div class="pair-chart"><canvas id="pc-${pair.replace(/\//g,'-')}" style="width:100%;height:100%"></canvas></div>`;
     grid.appendChild(div);
   }
-
-  // Generate synthetic mini sparklines from stored price history or just show last price dot
+  // mini sparklines
   for (const pair of pairs) {
-    const canvasId = `chart-${pair.replace(/\//g,'-')}`;
-    const canvas = document.getElementById(canvasId);
+    const canvas = document.getElementById(`pc-${pair.replace(/\//g,'-')}`);
     const p = prices[pair];
     if (canvas && p) {
-      // If no history available, show a simple flat line with minor noise for visual
-      const base = p;
-      const fakeHistory = Array.from({length: 20}, (_, i) => base + (Math.random() - 0.5) * base * 0.002);
-      fakeHistory.push(base);
-      drawMiniChart(canvas, fakeHistory);
+      const hist = Array.from({length:30},()=>p+(Math.random()-0.5)*p*0.003);
+      hist.push(p);
+      drawMiniChart(canvas, hist);
     }
   }
 }
 
 async function loadTrades() {
-  const rows = await apiFetch('/api/trades?limit=20');
-  const tb = document.getElementById('tradesBody');
-  tb.innerHTML = '';
-  if (!rows.length) {
-    tb.innerHTML = `<tr><td colspan="6" style="color:var(--muted)">No trades yet.</td></tr>`;
-    return;
-  }
+  const rows = await apiFetch('/api/trades?limit=30');
+  const tb = document.getElementById('tradesBody'); tb.innerHTML='';
+  if (!rows.length) { tb.innerHTML=`<tr><td colspan="8" style="color:var(--muted)">── no trades yet ──</td></tr>`; return; }
   for (const t of rows) {
-    const pnl = Number(t.realized_pnl || 0);
+    const pnl = Number(t.realized_pnl||0);
     const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${t.timestamp || '-'}</td>
-      <td>${t.symbol || ''}</td>
-      <td>${t.side || ''}</td>
-      <td>${fmt(t.price, 6)}</td>
-      <td>${fmt(t.amount, 6)}</td>
-      <td class="${pnlClass(pnl)}">$${fmt(pnl)}</td>`;
+    tr.innerHTML=`
+      <td>${t.timestamp||'-'}</td>
+      <td>${t.symbol||''}</td>
+      <td style="color:${t.side==='buy'?'var(--green)':'var(--red)'}">${(t.side||'').toUpperCase()}</td>
+      <td>${fmt(t.entry_price||t.price,4)}</td>
+      <td>${fmt(t.price,4)}</td>
+      <td>${fmt(t.amount,4)}</td>
+      <td class="${pnlClass(pnl)}">${pnlSign(pnl)}</td>
+      <td style="color:var(--muted)">${t.strategy||'--'}</td>`;
     tb.appendChild(tr);
   }
 }
 
+async function loadLogs() {
+  try {
+    const logs = await apiFetch('/api/logs?limit=50');
+    const panel = document.getElementById('logPanel'); panel.innerHTML='';
+    if (!logs.length) { panel.innerHTML='<div class="log-line" style="color:var(--muted)">No logs captured yet.</div>'; return; }
+    for (const l of logs) {
+      const div = document.createElement('div');
+      div.className = `log-line ${l.level==='error'?'error':l.level==='warn'?'warn':''}`;
+      div.innerHTML = `<span class="ts">[${l.ts.slice(11,19)}]</span> ${escHtml(l.msg)}`;
+      panel.appendChild(div);
+    }
+    panel.scrollTop = panel.scrollHeight;
+  } catch(_){}
+}
+
+function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
 async function loadSettings() {
   const s = await apiFetch('/api/settings');
-  const keys = ['RISK_PERCENT','MAX_LEVERAGE','LIQUIDATION_SAFETY_FACTOR','MAX_CONCURRENT_POSITIONS','COOLDOWN_SECONDS','TRADING_HOURS','MAX_DAILY_LOSS_PERCENT'];
-  for (const k of keys) { const el = document.getElementById(k); if (el) el.value = s[k] ?? ''; }
+  const keys=['RISK_PERCENT','MAX_LEVERAGE','LIQUIDATION_SAFETY_FACTOR','MAX_CONCURRENT_POSITIONS','COOLDOWN_SECONDS','TRADING_HOURS','MAX_DAILY_LOSS_PERCENT'];
+  for (const k of keys) { const el=document.getElementById(k); if(el) el.value=s[k]??''; }
 }
 
 // ---------- ACTIONS ----------
-async function pauseBot() {
-  if (!confirm('Pause bot? (no new entries)')) return;
-  await apiFetch('/api/pause', { method: 'POST' });
-  await refreshAll();
-}
-async function resumeBot() {
-  await apiFetch('/api/resume', { method: 'POST' });
-  await refreshAll();
-}
-async function emergencyStop() {
-  if (!confirm('EMERGENCY STOP: BOT_ACTIVE=false + close all positions. Confirm?')) return;
-  await apiFetch('/api/emergency-stop', { method: 'POST' });
-  await refreshAll();
-}
-async function closePos(symbol) {
-  if (!confirm(`Close position ${symbol}?`)) return;
-  await apiFetch('/api/close-position', { method: 'POST', body: JSON.stringify({ symbol }) });
-  await refreshAll();
-}
-async function moveBE(symbol) {
-  await apiFetch('/api/move-sl-breakeven', { method: 'POST', body: JSON.stringify({ symbol }) });
-  await refreshAll();
-}
+async function pauseBot() { if(!confirm('Pause bot?'))return; await apiFetch('/api/pause',{method:'POST'}); refreshAll(); }
+async function resumeBot() { await apiFetch('/api/resume',{method:'POST'}); refreshAll(); }
+async function emergencyStop() { if(!confirm('⚠ EMERGENCY: Stop bot + close ALL positions?'))return; await apiFetch('/api/emergency-stop',{method:'POST'}); refreshAll(); }
+async function closePos(s) { if(!confirm(`Close ${s}?`))return; await apiFetch('/api/close-position',{method:'POST',body:JSON.stringify({symbol:s})}); refreshAll(); }
+async function moveBE(s) { await apiFetch('/api/move-sl-breakeven',{method:'POST',body:JSON.stringify({symbol:s})}); refreshAll(); }
+function exportTrades() { window.open('/api/trades/export?x-api-key='+encodeURIComponent(API_KEY)); }
 async function saveSettings() {
-  const payload = {};
-  const keys = ['RISK_PERCENT','MAX_LEVERAGE','LIQUIDATION_SAFETY_FACTOR','MAX_CONCURRENT_POSITIONS','COOLDOWN_SECONDS','TRADING_HOURS','MAX_DAILY_LOSS_PERCENT'];
-  for (const k of keys) payload[k] = document.getElementById(k).value;
-  await apiFetch('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
-  const el = document.getElementById('settingsMsg');
-  el.textContent = '[ SAVED ]';
-  setTimeout(() => el.textContent = '', 2000);
+  const payload={};
+  const keys=['RISK_PERCENT','MAX_LEVERAGE','LIQUIDATION_SAFETY_FACTOR','MAX_CONCURRENT_POSITIONS','COOLDOWN_SECONDS','TRADING_HOURS','MAX_DAILY_LOSS_PERCENT'];
+  for(const k of keys) payload[k]=document.getElementById(k).value;
+  await apiFetch('/api/settings',{method:'POST',body:JSON.stringify(payload)});
+  const el=document.getElementById('settingsMsg'); el.textContent='[ SAVED ✓ ]'; setTimeout(()=>el.textContent='',2000);
 }
 
+// ---------- REFRESH ----------
 async function refreshAll() {
-  try {
-    await Promise.all([loadStatus(), loadBalance(), loadPositions(), loadStats(), loadDailyPnl(), loadPairCharts(), loadTrades(), loadSettings()]);
-  } catch (e) {
-    console.error('Dashboard error:', e);
-  }
+  try { await Promise.all([loadStatus(),loadBalance(),loadPositions(),loadStats(),loadDailyPnl(),loadRiskExposure(),loadPairCharts(),loadTrades(),loadLogs(),loadSettings()]); }
+  catch(e) { console.error('Refresh error:',e); }
 }
 
-// initial load + auto-refresh
 refreshAll();
-setInterval(() => {
-  loadStatus().catch(() => {});
-  loadBalance().catch(() => {});
-  loadPositions().catch(() => {});
-  loadStats().catch(() => {});
-  loadDailyPnl().catch(() => {});
+setInterval(()=>{
+  loadStatus().catch(()=>{});
+  loadBalance().catch(()=>{});
+  loadPositions().catch(()=>{});
+  loadLogs().catch(()=>{});
 }, 15000);
+setInterval(()=>{
+  loadStats().catch(()=>{});
+  loadDailyPnl().catch(()=>{});
+  loadRiskExposure().catch(()=>{});
+}, 30000);
 </script>
 </body>
 </html>
