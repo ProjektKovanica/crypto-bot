@@ -29,6 +29,8 @@ function requireApiKey(req, res, next) {
 
 // Jednostavan rate limiter: max 30 zahtjeva po IP-u u 60 sekundi za settings/resume rute
 const settingsRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+// Rate limiter za Telegram webhook i unrealized-pnl (live burza pozivi)
+const liveRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
 
 app.use('/api', requireApiKey);
 
@@ -106,7 +108,7 @@ app.post('/api/move-sl-breakeven', async (req, res) => {
 // Bot mora biti konfiguriran da šalje update-e na ovu rutu:
 //   POST https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<tvoj-server>/telegram-webhook
 // Ruta je namjerno izvan /api/* (ne treba x-api-key), ali provjerava Telegram secret ako je postavljen.
-app.post('/telegram-webhook', express.json(), async (req, res) => {
+app.post('/telegram-webhook', liveRateLimiter, express.json(), async (req, res) => {
     try {
         const update = req.body;
         const cbq = update?.callback_query;
@@ -156,7 +158,7 @@ app.get('/api/balance', async (req, res) => {
 });
 
 // API: Live unrealized PnL za aktivne pozicije (mark price s burze)
-app.get('/api/unrealized-pnl', async (req, res) => {
+app.get('/api/unrealized-pnl', liveRateLimiter, async (req, res) => {
     try {
         if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
         const positions = db.prepare('SELECT * FROM active_positions').all();
