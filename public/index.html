@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Algo-Bot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        body { background-color: #0f172a; color: #f8fafc; }
+        .tv-chart { height: 400px; width: 100%; }
+    </style>
+</head>
+<body class="p-4 md:p-8 font-sans">
+
+    <header class="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b border-slate-700 pb-4">
+        <div>
+            <h1 class="text-3xl font-bold text-blue-400">Trading Bot Dashboard</h1>
+            <p class="text-sm text-slate-400 mt-1">Status: <span id="bot-status" class="font-bold text-green-400">PROVJERA...</span></p>
+        </div>
+        <button onclick="killSwitch()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg w-full md:w-auto transition">
+            🛑 KILL SWITCH (Pauziraj bota)
+        </button>
+    </header>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        
+        <div class="xl:col-span-2 space-y-6">
+            <div class="bg-slate-800 p-4 rounded-xl shadow-md">
+                <h2 class="text-xl font-semibold mb-4">BTC/USDC (15m) Analiza</h2>
+                <div id="tv-chart" class="tv-chart rounded overflow-hidden"></div>
+            </div>
+
+            <div class="bg-slate-800 p-4 rounded-xl shadow-md overflow-x-auto">
+                <h2 class="text-xl font-semibold mb-4 text-emerald-400">Trenutno Otvorene Pozicije</h2>
+                <table class="w-full text-left text-sm whitespace-nowrap">
+                    <thead class="text-slate-400 border-b border-slate-700">
+                        <tr>
+                            <th class="pb-2">Par</th>
+                            <th class="pb-2">Smjer</th>
+                            <th class="pb-2">Ulazna Cijena</th>
+                            <th class="pb-2">Veličina</th>
+                            <th class="pb-2">Akcija</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positions-body">
+                        <tr><td colspan="5" class="pt-4 text-center text-slate-500">Učitavanje...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="bg-slate-800 p-4 rounded-xl shadow-md overflow-x-auto h-fit max-h-[800px] overflow-y-auto">
+            <h2 class="text-xl font-semibold mb-4 text-blue-300">Povijest Tradeova</h2>
+            <table class="w-full text-left text-sm">
+                <thead class="text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="pb-2">Vrijeme</th>
+                        <th class="pb-2">Par</th>
+                        <th class="pb-2">PnL</th>
+                    </tr>
+                </thead>
+                <tbody id="trades-body">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // 1. Inicijalizacija TradingView Grafa
+        const chart = LightweightCharts.createChart(document.getElementById('tv-chart'), {
+            layout: { background: { type: 'solid', color: '#1e293b' }, textColor: '#cbd5e1' },
+            grid: { vertLines: { color: '#334155' }, horzLines: { color: '#334155' } },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+            timeScale: { timeVisible: true, secondsVisible: false }
+        });
+        const candleSeries = chart.addCandlestickSeries({
+            upColor: '#22c55e', downColor: '#ef4444', borderVisible: false, wickUpColor: '#22c55e', wickDownColor: '#ef4444'
+        });
+
+        // Dohvaćanje stvarnih svijeća direktno s Binancea za prikaz
+        async function loadChartData() {
+            try {
+                const res = await fetch('https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDC&interval=15m&limit=100');
+                const data = await res.json();
+                const cdata = data.map(d => ({
+                    time: d[0] / 1000, open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4])
+                }));
+                candleSeries.setData(cdata);
+            } catch (e) { console.error("Greška pri učitavanju grafa:", e); }
+        }
+
+        // 2. Osvježavanje podataka s našeg API-ja (Eksplicitno na port 5050)
+        async function updateDashboard() {
+            try {
+                // Status
+                const statusRes = await fetch('http://145.223.116.178:5050/api/status');
+                const { status } = await statusRes.json();
+                const statusEl = document.getElementById('bot-status');
+                statusEl.innerText = status;
+                statusEl.className = status === 'RUNNING' ? 'font-bold text-green-400' : 'font-bold text-red-500';
+
+                // Aktivne pozicije
+                const posRes = await fetch('http://145.223.116.178:5050/api/positions');
+                const positions = await posRes.json();
+                let posHtml = '';
+                if(positions.length === 0) posHtml = '<tr><td colspan="5" class="pt-4 text-center text-slate-500">Nema otvorenih pozicija.</td></tr>';
+                positions.forEach(p => {
+                    const sideColor = p.side === 'buy' ? 'text-green-400' : 'text-red-400';
+                    posHtml += `
+                        <tr class="border-b border-slate-700/50">
+                            <td class="py-3 font-semibold">${p.symbol}</td>
+                            <td class="py-3 font-bold ${sideColor}">${p.side.toUpperCase()}</td>
+                            <td class="py-3">$${parseFloat(p.entry_price).toFixed(2)}</td>
+                            <td class="py-3">${p.size}</td>
+                            <td class="py-3">
+                                <button onclick="closePosition('${p.symbol}')" class="bg-red-500/20 hover:bg-red-500 hover:text-white text-red-400 text-xs px-3 py-1 rounded transition border border-red-500">
+                                    Zatvori
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                });
+                document.getElementById('positions-body').innerHTML = posHtml;
+
+                // Povijest
+                const tradesRes = await fetch('http://145.223.116.178:5050/api/trades');
+                const trades = await tradesRes.json();
+                let tradesHtml = '';
+                trades.forEach(t => {
+                    const date = new Date(t.timestamp).toLocaleTimeString('hr-HR', {hour: '2-digit', minute:'2-digit'});
+                    const pnlClass = t.realized_pnl >= 0 ? 'text-green-400' : 'text-red-400';
+                    const pnlPrefix = t.realized_pnl >= 0 ? '+' : '';
+                    tradesHtml += `
+                        <tr class="border-b border-slate-700/50">
+                            <td class="py-2 text-slate-400">${date}</td>
+                            <td class="py-2">${t.symbol}</td>
+                            <td class="py-2 font-bold ${pnlClass}">${pnlPrefix}$${parseFloat(t.realized_pnl).toFixed(2)}</td>
+                        </tr>
+                    `;
+                });
+                document.getElementById('trades-body').innerHTML = tradesHtml;
+
+            } catch (e) { console.error("Greška pri osvježavanju:", e); }
+        }
+
+        // 3. Akcije (Gumbi)
+        async function killSwitch() {
+            if(confirm('Jesi li siguran da želiš zaustaviti bota? Otvorene pozicije ostat će na Binanceu, ali bot neće otvarati nove.')) {
+                await fetch('http://145.223.116.178:5050/api/kill-switch', { method: 'POST' });
+                updateDashboard();
+            }
+        }
+
+        async function closePosition(symbol) {
+            if(confirm(`Zatvoriti trenutnu poziciju za ${symbol}?`)) {
+                await fetch('http://145.223.116.178:5050/api/close-position', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol })
+                });
+                updateDashboard();
+            }
+        }
+
+        // Pokretanje
+        loadChartData();
+        updateDashboard();
+        setInterval(updateDashboard, 5000); 
+        setInterval(loadChartData, 60000); 
+
+        window.addEventListener('resize', () => {
+            chart.applyOptions({ width: document.getElementById('tv-chart').clientWidth });
+        });
+    </script>
+</body>
+</html>
