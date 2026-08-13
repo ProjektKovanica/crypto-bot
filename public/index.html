@@ -124,7 +124,17 @@
         </div>
 
         <button onclick="pause()" class="w-full mt-2 bg-yellow-900 text-yellow-500 p-2 border border-yellow-700">PAUSE_NEW_ENTRIES</button>
+        <button onclick="resume()" class="w-full mt-2 bg-green-900 text-green-500 p-2 border border-green-700">RESUME_NEW_ENTRIES</button>
         <button onclick="emergencyStop()" class="w-full mt-2 bg-red-900 text-red-500 p-2 border border-red-700">EMERGENCY_STOP (zatvori sve)</button>
+
+        <!-- SETTINGS -->
+        <div class="mt-6 mb-4">
+            <div class="text-xs text-green-700 mb-1">POSTAVKE BOTA</div>
+            <div id="settingsPanel" class="border border-green-900 p-3 text-xs space-y-2">
+                <div class="text-green-800">Učitavam...</div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -384,9 +394,50 @@
 
         async function refreshAll() {
             try {
-                await Promise.all([loadBalance(), loadPositions(), loadTrades(), loadStats()]);
+                await Promise.all([loadBalance(), loadPositions(), loadTrades(), loadStats(), loadSettings()]);
             } catch (e) {
                 console.error('Refresh error:', e);
+            }
+        }
+
+        // ---------- SETTINGS ----------
+        const SETTING_LABELS = {
+            RISK_PERCENT: 'Risk % po trejdu',
+            MAX_CONCURRENT_POSITIONS: 'Maks. otvorenih pozicija',
+            MAX_LEVERAGE: 'Maks. leverage',
+            LIQUIDATION_SAFETY_FACTOR: 'Safety factor (likvidacija)',
+            COOLDOWN_SECONDS: 'Cooldown između trejdova (s)'
+        };
+        const EDITABLE_KEYS = Object.keys(SETTING_LABELS);
+
+        async function loadSettings() {
+            try {
+                const s = await apiFetch('/api/settings');
+                const el = document.getElementById('settingsPanel');
+                el.innerHTML = EDITABLE_KEYS.map(key => `
+                    <div class="flex items-center justify-between gap-2">
+                        <label class="text-green-700 w-48 shrink-0">${SETTING_LABELS[key]}</label>
+                        <input id="setting_${key}" type="text" value="${s[key] ?? ''}"
+                            class="bg-black border border-green-900 p-1 w-24 text-green-400 outline-none focus:border-green-600 text-right" />
+                        <button onclick="saveSetting('${key}')" class="text-green-600 border border-green-800 px-2 py-1">SPREMI</button>
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Settings error:', err);
+            }
+        }
+
+        async function saveSetting(key) {
+            const val = document.getElementById('setting_' + key)?.value?.trim();
+            if (!val) return alert('Unesi vrijednost.');
+            try {
+                await apiFetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, value: val })
+                });
+            } catch (err) {
+                alert('Greška pri spremanju: ' + err.message);
             }
         }
 
@@ -408,6 +459,15 @@
             try {
                 await apiFetch('/api/pause', { method: 'POST' });
                 alert('Bot pauziran - nove pozicije se neće otvarati, postojeće ostaju.');
+            } catch (err) {
+                alert('Greška: ' + err.message);
+            }
+        }
+
+        async function resume() {
+            try {
+                await apiFetch('/api/resume', { method: 'POST' });
+                alert('Bot aktiviran - novi entryji su dozvoljeni.');
             } catch (err) {
                 alert('Greška: ' + err.message);
             }

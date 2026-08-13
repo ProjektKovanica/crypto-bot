@@ -2,10 +2,10 @@ const express = require('express');
 const path = require('path');
 const { db } = require('./db');
 const { forceClosePosition, closeAllPositions } = require('./strategies/position_manager');
+const { TRADING_PAIRS } = require('./config');
 
-const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC', 'DOGE/USDC'];
 const app = express();
-const PORT = 4040;
+const PORT = 5050;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -56,6 +56,34 @@ app.post('/api/pause', (req, res) => {
     res.json({ success: true, message: 'Bot pauziran - postojeće pozicije ostaju otvorene.' });
 });
 
+// API: Nastavi - ponovo aktivira nove entryje
+app.post('/api/resume', (req, res) => {
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('true', 'BOT_ACTIVE');
+    res.json({ success: true, message: 'Bot aktiviran - novi entryji su dozvoljeni.' });
+});
+
+// API: Dohvat svih postavki
+app.get('/api/settings', (req, res) => {
+    const rows = db.prepare('SELECT key, value FROM settings').all();
+    const settings = {};
+    for (const r of rows) settings[r.key] = r.value;
+    res.json(settings);
+});
+
+// API: Ažuriranje postavke
+app.post('/api/settings', (req, res) => {
+    const EDITABLE_KEYS = ['RISK_PERCENT', 'MAX_CONCURRENT_POSITIONS', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'COOLDOWN_SECONDS'];
+    const { key, value } = req.body;
+    if (!key || !EDITABLE_KEYS.includes(key)) {
+        return res.status(400).json({ error: `Nepoznata ili zaštićena ključ: ${key}` });
+    }
+    if (value == null || String(value).trim() === '') {
+        return res.status(400).json({ error: 'Vrijednost ne smije biti prazna.' });
+    }
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(value).trim(), key);
+    res.json({ success: true, key, value: String(value).trim() });
+});
+
 // API: Pravi emergency stop - zaustavi bota I zatvori sve otvorene pozicije po marketu
 app.post('/api/emergency-stop', async (req, res) => {
     if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
@@ -83,12 +111,31 @@ app.get('/api/balance', async (req, res) => {
     try {
         if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
         const balance = await global.exchange.fetchBalance();
-        const usdc = balance['USDC'] || { free: 0, used: 0, total: 0 };
-        res.json({
-            free: usdc.free || 0,
-            used: usdc.used || 0,
-            total: usdc.total || 0
-        });
+
+        // Robustna ekstrakcija — isti pristup kao u bot.js getUsdcAvailableBalance()
+        let free = 0, used = 0, total = 0;
+        try {
+            const assets = balance?.info?.assets;
+            if (Array.isArray(assets)) {
+                const a = assets.find(x => String(x.asset).toUpperCase() === 'USDC')
+                       || assets.find(x => String(x.asset).toUpperCase() === 'U');
+                if (a) {
+                    free  = parseFloat(a.availableBalance) || 0;
+                    total = parseFloat(a.walletBalance)    || 0;
+                    used  = Math.max(0, total - free);
+                }
+            }
+        } catch (_) {}
+
+        // Fallback: CCXT unified map
+        if (!free && !total) {
+            const u = balance?.USDC || {};
+            free  = u.free  || 0;
+            used  = u.used  || 0;
+            total = u.total || 0;
+        }
+
+        res.json({ free, used, total });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -153,7 +200,7 @@ app.get('/api/stats', (req, res) => {
 
 function startServer(exchange) {
     global.exchange = exchange;
-    app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Dashboard online: http://145.223.116.178:${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Dashboard online: http://localhost:${PORT}`));
 }
 
 module.exports = { startServer };
