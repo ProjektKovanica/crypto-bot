@@ -1,8 +1,8 @@
 const express = require('express');
 const path = require('path');
+const { rateLimit } = require('express-rate-limit');
 const { db } = require('./db');
-const { forceClosePosition, closeAllPositions } = require('./strategies/position_manager');
-const { TRADING_PAIRS } = require('./config');
+const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 
 const app = express();
 const PORT = 5050;
@@ -26,15 +26,26 @@ function requireApiKey(req, res, next) {
     next();
 }
 
+// Jednostavan rate limiter: max 30 zahtjeva po IP-u u 60 sekundi za settings/resume rute
+const settingsRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false });
+// Rate limiter za Telegram webhook i unrealized-pnl (live burza pozivi)
+const liveRateLimiter = rateLimit({ windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false });
+
 app.use('/api', requireApiKey);
 
 // API: Status bota
 app.get('/api/status', (req, res) => {
     try {
         const botStatus = db.prepare('SELECT value FROM settings WHERE key = ?').get('BOT_ACTIVE');
+        const state = global.botState || {};
         res.json({ 
             status: botStatus && botStatus.value === 'true' ? 'RUNNING' : 'STOPPED',
-            online: true
+            online: true,
+            cycleCounter: state.cycleCounter || 0,
+            isCycleRunning: state.isCycleRunning || false,
+            lastCycleStartedAt: state.lastCycleStartedAt || null,
+            lastCycleEndedAt: state.lastCycleEndedAt || null,
+            lastPrices: state.lastPrices || {}
         });
     } catch (error) {
         res.status(500).json({ error: error.message, online: false });
@@ -56,32 +67,11 @@ app.post('/api/pause', (req, res) => {
     res.json({ success: true, message: 'Bot pauziran - postojeće pozicije ostaju otvorene.' });
 });
 
-// API: Nastavi - ponovo aktivira nove entryje
-app.post('/api/resume', (req, res) => {
+// API: Resume - nastavi s novim entryima nakon pauze
+app.post('/api/resume', settingsRateLimiter, (req, res) => {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('true', 'BOT_ACTIVE');
-    res.json({ success: true, message: 'Bot aktiviran - novi entryji su dozvoljeni.' });
+    res.json({ success: true, message: 'Bot nastavlja - novi entryji su ponovno aktivni.' });
 });
-
-// API: Dohvat svih postavki
-app.get('/api/settings', (req, res) => {
-    const rows = db.prepare('SELECT key, value FROM settings').all();
-    const settings = {};
-    for (const r of rows) settings[r.key] = r.value;
-    res.json(settings);
-});
-
-// API: Ažuriranje postavke
-app.post('/api/settings', (req, res) => {
-    const EDITABLE_KEYS = ['RISK_PERCENT', 'MAX_CONCURRENT_POSITIONS', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'COOLDOWN_SECONDS'];
-    const { key, value } = req.body;
-    if (!key || !EDITABLE_KEYS.includes(key)) {
-        return res.status(400).json({ error: `Nepoznata ili zaštićena ključ: ${key}` });
-    }
-    if (value == null || String(value).trim() === '') {
-        return res.status(400).json({ error: 'Vrijednost ne smije biti prazna.' });
-    }
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(String(value).trim(), key);
-    res.json({ success: true, key, value: String(value).trim() });
 });
 
 // API: Pravi emergency stop - zaustavi bota I zatvori sve otvorene pozicije po marketu
@@ -104,6 +94,51 @@ app.post('/api/close-position', async (req, res) => {
     if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
     const result = await forceClosePosition(global.exchange, db, symbol);
     res.json(result);
+});
+
+// API: Premjesti SL na breakeven
+app.post('/api/move-sl-breakeven', async (req, res) => {
+    const { symbol } = req.body;
+    if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
+    const result = await moveSLToBreakeven(global.exchange, db, symbol);
+    res.json(result);
+});
+
+// Telegram webhook — prima callback_query od inline gumbova
+// Bot mora biti konfiguriran da šalje update-e na ovu rutu:
+//   POST https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<tvoj-server>/telegram-webhook
+// Ruta je namjerno izvan /api/* (ne treba x-api-key), ali provjerava Telegram secret ako je postavljen.
+app.post('/telegram-webhook', liveRateLimiter, express.json(), async (req, res) => {
+    try {
+        const update = req.body;
+        const cbq = update?.callback_query;
+        if (!cbq) return res.sendStatus(200);
+
+        const { answerCallbackQuery, sendTelegramMessage } = require('./notifier');
+        const data = cbq.data || '';
+        const [action, ...symbolParts] = data.split(':');
+        const symbol = symbolParts.join(':'); // simbol može sadržavati '/'
+
+        if (!global.exchange) {
+            await answerCallbackQuery(cbq.id, '❌ Exchange nije spreman');
+            return res.sendStatus(200);
+        }
+
+        if (action === 'close') {
+            const { forceClosePosition } = require('./strategies/position_manager');
+            const result = await forceClosePosition(global.exchange, db, symbol);
+            await answerCallbackQuery(cbq.id, result.success ? `✅ ${symbol} zatvoreno` : `❌ ${result.error}`);
+        } else if (action === 'be') {
+            const { moveSLToBreakeven } = require('./strategies/position_manager');
+            const result = await moveSLToBreakeven(global.exchange, db, symbol);
+            await answerCallbackQuery(cbq.id, result.success ? `🔒 SL → BE za ${symbol}` : `❌ ${result.error}`);
+        } else {
+            await answerCallbackQuery(cbq.id, 'Nepoznata akcija');
+        }
+    } catch (err) {
+        console.error('[Telegram webhook] Greška:', err.message);
+    }
+    res.sendStatus(200);
 });
 
 // API: Stanje računa (live sa Binancea)
@@ -136,6 +171,30 @@ app.get('/api/balance', async (req, res) => {
         }
 
         res.json({ free, used, total });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// API: Live unrealized PnL za aktivne pozicije (mark price s burze)
+app.get('/api/unrealized-pnl', liveRateLimiter, async (req, res) => {
+    try {
+        if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
+        const positions = db.prepare('SELECT * FROM active_positions').all();
+        const result = [];
+        for (const pos of positions) {
+            try {
+                const ticker = await global.exchange.fetchTicker(pos.symbol);
+                const markPrice = ticker.last;
+                const unrealizedPnl = pos.side === 'buy'
+                    ? (markPrice - pos.entry_price) * pos.size
+                    : (pos.entry_price - markPrice) * pos.size;
+                result.push({ symbol: pos.symbol, markPrice, unrealizedPnl: Number(unrealizedPnl.toFixed(2)) });
+            } catch (_) {
+                result.push({ symbol: pos.symbol, markPrice: null, unrealizedPnl: null });
+            }
+        }
+        res.json(result);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -175,12 +234,20 @@ app.get('/api/stats', (req, res) => {
         return { timestamp: t.timestamp, cumulative_pnl: Number(cumulative.toFixed(2)) };
     });
 
-    // Raspodjela po paru
+    // Raspodjela po paru (s win rate-om)
     const bySymbol = {};
     for (const t of trades) {
-        if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { trades: 0, pnl: 0 };
+        if (!bySymbol[t.symbol]) bySymbol[t.symbol] = { trades: 0, wins: 0, losses: 0, pnl: 0 };
         bySymbol[t.symbol].trades += 1;
-        bySymbol[t.symbol].pnl += (t.realized_pnl || 0);
+        bySymbol[t.symbol].pnl   += (t.realized_pnl || 0);
+        if (t.realized_pnl > 0) bySymbol[t.symbol].wins += 1;
+        else bySymbol[t.symbol].losses += 1;
+    }
+    // Dodaj winRate u svaki simbol
+    for (const sym of Object.keys(bySymbol)) {
+        const d = bySymbol[sym];
+        d.winRate = d.trades > 0 ? Number(((d.wins / d.trades) * 100).toFixed(1)) : null;
+        d.pnl = Number(d.pnl.toFixed(2));
     }
 
     res.json({
@@ -196,6 +263,34 @@ app.get('/api/stats', (req, res) => {
         equityCurve,
         bySymbol
     });
+});
+
+// API: Čitanje svih postavki bota
+const EDITABLE_SETTINGS = ['RISK_PERCENT', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'MAX_CONCURRENT_POSITIONS', 'COOLDOWN_SECONDS', 'TRADING_HOURS', 'MAX_DAILY_LOSS_PERCENT'];
+
+app.get('/api/settings', settingsRateLimiter, (req, res) => {
+    const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (' + EDITABLE_SETTINGS.map(() => '?').join(',') + ')').all(...EDITABLE_SETTINGS);
+    const settings = {};
+    for (const row of rows) settings[row.key] = row.value;
+    res.json(settings);
+});
+
+// API: Ažuriranje postavki bota
+app.post('/api/settings', settingsRateLimiter, (req, res) => {
+    const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ error: 'Neispravan payload' });
+    }
+    const update = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+    const updateMany = db.transaction((entries) => {
+        for (const [key, value] of entries) {
+            if (EDITABLE_SETTINGS.includes(key)) {
+                update.run(String(value), key);
+            }
+        }
+    });
+    updateMany(Object.entries(updates));
+    res.json({ success: true });
 });
 
 function startServer(exchange) {

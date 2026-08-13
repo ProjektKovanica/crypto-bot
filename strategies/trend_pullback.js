@@ -1,18 +1,90 @@
-const { sendTelegramMessage } = require('../notifier');
+const { sendTelegramMessage, tradeKeyboard } = require('../notifier');
+
+// ── Kelly Criterion (half-Kelly) ────────────────────────────────────────────
+// Vraća udio portfelja za uložiti na temelju prošlih trejdova za dani simbol.
+// Koristi settings.RISK_PERCENT kao fallback (minimalni/maksimalni cap).
+function calcKellyRiskPercent(db, symbol, defaultRiskPercent) {
+    try {
+        const trades = db.prepare(
+            "SELECT realized_pnl FROM trades WHERE symbol = ? ORDER BY timestamp DESC LIMIT 100"
+        ).all(symbol);
+
+        if (trades.length < 10) return defaultRiskPercent; // nema dovoljno podataka
+
+        const wins   = trades.filter(t => t.realized_pnl > 0);
+        const losses = trades.filter(t => t.realized_pnl <= 0);
+        if (wins.length === 0 || losses.length === 0) return defaultRiskPercent;
+
+        const winRate  = wins.length / trades.length;
+        const lossRate = 1 - winRate;
+        const avgWin   = wins.reduce((s, t) => s + t.realized_pnl, 0) / wins.length;
+        const avgLoss  = Math.abs(losses.reduce((s, t) => s + t.realized_pnl, 0) / losses.length);
+        if (avgLoss === 0) return defaultRiskPercent;
+
+        const R = avgWin / avgLoss;
+        const kelly = (winRate * R - lossRate) / R;
+        const halfKelly = kelly / 2; // pola-Kelly radi sigurnosti
+
+        // Cap: između 0.5× i 2× defaultnog rizika
+        const minRisk = defaultRiskPercent * 0.5;
+        const maxRisk = defaultRiskPercent * 2;
+        return Math.min(maxRisk, Math.max(minRisk, halfKelly * 100));
+    } catch (_) {
+        return defaultRiskPercent;
+    }
+}
+
+// ── Provjera funding rate-a ──────────────────────────────────────────────────
+// Vraća true ako je funding rate nepovoljan za danu stranu.
+// LONG: funding > +0.05% skupo je (plaćaš) → preskoči
+// SHORT: funding < -0.05% skupo je (plaćaš) → preskoči
+async function isFundingRateUnfavorable(exchange, symbol, side) {
+    try {
+        // CCXT: fetchFundingRate(symbol) → { fundingRate }
+        const fr = await exchange.fetchFundingRate(symbol);
+        const rate = fr?.fundingRate;
+        if (rate == null || isNaN(rate)) return false;
+        if (side === 'buy'  && rate >  0.0005) return true;  // > +0.05%
+        if (side === 'sell' && rate < -0.0005) return true;  // < -0.05%
+        return false;
+    } catch (_) {
+        return false; // ne blokiraj trejd ako API greška
+    }
+}
+
+// ── Provjera blackout sati ───────────────────────────────────────────────────
+// TRADING_HOURS format: "HH:MM-HH:MM" UTC (npr. "06:00-20:00")
+function isWithinTradingHours(hoursStr) {
+    if (!hoursStr || hoursStr === 'disabled') return true;
+    try {
+        const [startStr, endStr] = hoursStr.split('-');
+        const now = new Date();
+        const [sh, sm] = startStr.split(':').map(Number);
+        const [eh, em] = endStr.split(':').map(Number);
+        const nowMins  = now.getUTCHours() * 60 + now.getUTCMinutes();
+        const startMins = sh * 60 + sm;
+        const endMins   = eh * 60 + em;
+        if (startMins <= endMins) {
+            return nowMins >= startMins && nowMins < endMins;
+        }
+        // Prelaz ponoći
+        return nowMins >= startMins || nowMins < endMins;
+    } catch (_) {
+        return true;
+    }
+}
 
 async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, cycleId) {
     const tag = cycleId ? `[CYCLE ${cycleId}]` : '[TRADE]';
 
-    // KRITIČNO #2: ne otvaraj novu poziciju ako već postoji aktivna za ovaj par.
-    // Bez ovoga je moguć dupli entry ako se uvjeti opet poklope prije nego
-    // se DB/burza stignu sinkronizirati.
+    // Dupli entry guard (sekundarna provjera, primarno je u bot.js)
     const existingPosition = db.prepare('SELECT id FROM active_positions WHERE symbol = ?').get(symbol);
     if (existingPosition) {
         console.log(`${tag} ${symbol} SKIP: aktivna pozicija već postoji (id=${existingPosition.id})`);
         return;
     }
 
-    // Bonus: hard cap na broj istovremeno otvorenih pozicija (settings.MAX_CONCURRENT_POSITIONS)
+    // Cap na broj pozicija
     const maxPosSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_CONCURRENT_POSITIONS');
     const maxConcurrent = maxPosSetting ? parseInt(maxPosSetting.value, 10) : 3;
     const openCount = db.prepare('SELECT COUNT(*) as c FROM active_positions').get().c;
@@ -21,41 +93,85 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
         return;
     }
 
-    const { currentPrice, rsi, ema, macd } = indicators;
+    // ── Blackout sati ──────────────────────────────────────────────────────
+    const hoursSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('TRADING_HOURS');
+    const hoursStr = hoursSetting ? hoursSetting.value : 'disabled';
+    if (!isWithinTradingHours(hoursStr)) {
+        console.log(`${tag} ${symbol} SKIP: izvan trading sati (${hoursStr} UTC)`);
+        return;
+    }
 
-    // Uvjeti za LONG
-    const isUptrend = currentPrice > ema;
-    const isOversold = rsi < 40;
-    const isBullishMomentum = macd.histogram > 0;
+    const { currentPrice, rsi, rsiPrev, ema, macd, atr, adx,
+            currentVolume, volumeSMA, mtfBullish, mtfBearish } = indicators;
 
-    // Uvjeti za SHORT
-    const isDowntrend = currentPrice < ema;
-    const isOverbought = rsi > 60;
-    const isBearishMomentum = macd.histogram < 0;
+    // ── ADX filter: trgujemo samo u trending tržištu ───────────────────────
+    const adxThreshold = 25;
+    if (adx != null && adx < adxThreshold) {
+        console.log(`${tag} ${symbol} SKIP: ADX=${adx != null ? adx.toFixed(1) : 'n/a'} < ${adxThreshold} (ranging market)`);
+        return;
+    }
 
-    const riskSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('RISK_PERCENT');
-    const riskPercent = parseFloat(riskSetting.value) / 100;
+    // ── Volume filter: signal mora imati nadprosječni volumen ─────────────
+    if (volumeSMA != null && currentVolume != null && currentVolume < volumeSMA) {
+        console.log(`${tag} ${symbol} SKIP: volumen ispod SMA (${currentVolume?.toFixed(0)} < ${volumeSMA?.toFixed(0)})`);
+        return;
+    }
+
+    // ── Uvjeti za LONG ────────────────────────────────────────────────────
+    const isUptrend          = currentPrice > ema;
+    const isOversold         = rsi < 40;
+    const isBullishMomentum  = macd.histogram > 0;
+    const isRsiRising        = rsiPrev != null && rsi > rsiPrev;
+
+    // ── Uvjeti za SHORT ───────────────────────────────────────────────────
+    const isDowntrend        = currentPrice < ema;
+    const isOverbought       = rsi > 60;
+    const isBearishMomentum  = macd.histogram < 0;
+    const isRsiFalling       = rsiPrev != null && rsi < rsiPrev;
+
+    // ── Postavke ──────────────────────────────────────────────────────────
+    const riskSetting   = db.prepare('SELECT value FROM settings WHERE key = ?').get('RISK_PERCENT');
+    const defaultRisk   = parseFloat(riskSetting.value);
+    const kellyRisk     = calcKellyRiskPercent(db, symbol, defaultRisk);
+    const riskPercent   = kellyRisk / 100;
     const maxLossAmount = usdcBalance * riskPercent;
-    const slPercent = 0.03;
 
-    const maxLevSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_LEVERAGE');
-    const safetySetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('LIQUIDATION_SAFETY_FACTOR');
-    const maxLeverage = maxLevSetting ? parseInt(maxLevSetting.value, 10) : 10;
-    const safetyFactor = safetySetting ? parseFloat(safetySetting.value) : 0.5;
+    const maxLevSetting    = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_LEVERAGE');
+    const safetySetting    = db.prepare('SELECT value FROM settings WHERE key = ?').get('LIQUIDATION_SAFETY_FACTOR');
+    const maxLeverage      = maxLevSetting ? parseInt(maxLevSetting.value, 10) : 10;
+    const safetyFactor     = safetySetting ? parseFloat(safetySetting.value) : 0.5;
 
-    // Dinamički leverage: teoretski maksimalni leverage prije nego likvidacija
-    // "sustigne" stop-loss je otprilike 1/slPercent (npr. 3% SL -> ~33x).
-    // Množimo sa safetyFactor da ostavimo buffer (fees, funding, slippage, fitilj),
-    // i cappamo na MAX_LEVERAGE kao tvrdu granicu.
+    // ── ATR-based SL/TP ───────────────────────────────────────────────────
+    // SL = 1.5 × ATR | TP = 3 × ATR (2:1 R:R)
+    // Fallback na 3% ako ATR nije dostupan
+    const atrSlMult = 1.5;
+    const atrTpMult = 3.0;
+    const slDistance = atr != null ? atr * atrSlMult : currentPrice * 0.03;
+    const tpDistance = atr != null ? atr * atrTpMult : currentPrice * 0.06;
+    const slPercent  = slDistance / currentPrice; // za leverage izračun
+
+    // Dinamički leverage baziran na ATR SL udaljenosti
     const rawLeverage = Math.floor(safetyFactor / slPercent);
-    const leverage = Math.min(maxLeverage, Math.max(1, rawLeverage));
+    const leverage    = Math.min(maxLeverage, Math.max(1, rawLeverage));
 
-    // --- LOGIKA ZA LONG ---
-    if (isUptrend && isOversold && isBullishMomentum) {
-        console.log(`${tag} ${symbol} SIGNAL LONG | uptrend=${isUptrend} oversold=${isOversold} bullishMom=${isBullishMomentum} | price=${currentPrice} rsi=${rsi} ema=${ema} macdHist=${macd.histogram}`);
+    // ── LONG logika ───────────────────────────────────────────────────────
+    if (isUptrend && isOversold && isBullishMomentum && isRsiRising) {
+        // MTF potvrda: 1h i 4h moraju biti bullish
+        if (!mtfBullish) {
+            console.log(`${tag} ${symbol} SKIP LONG: MTF potvrda nije zadovoljena (1h/4h downtrend)`);
+            return;
+        }
 
-        const slPrice = currentPrice * (1 - slPercent);
-        const tpPrice = currentPrice * (1 + (slPercent * 2));
+        // Funding rate provjera
+        if (await isFundingRateUnfavorable(exchange, symbol, 'buy')) {
+            console.log(`${tag} ${symbol} SKIP LONG: funding rate nepovoljan za LONG`);
+            return;
+        }
+
+        console.log(`${tag} ${symbol} SIGNAL LONG | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum} rsiRising=${isRsiRising} adx=${adx?.toFixed(1)} mtfBullish=${mtfBullish} kelly=${kellyRisk.toFixed(2)}% | price=${currentPrice} rsi=${rsi?.toFixed(2)} atr=${atr?.toFixed(4)}`);
+
+        const slPrice = currentPrice - slDistance;
+        const tpPrice = currentPrice + tpDistance;
         const lossPerCoin = currentPrice - slPrice;
         let positionSize = maxLossAmount / lossPerCoin;
 
@@ -69,39 +185,45 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
         }
 
         try {
-            try {
-                await exchange.setLeverage(leverage, symbol);
-            } catch (levErr) {
-                console.warn(`⚠️  Leverage već postavljen ili nije podržan za ${symbol}:`, levErr.message);
+            try { await exchange.setLeverage(leverage, symbol); } catch (levErr) {
+                console.warn(`⚠️  Leverage greška za ${symbol}:`, levErr.message);
             }
 
             const params = { stopLossPrice: formattedSL, takeProfitPrice: formattedTP };
             await exchange.createMarketOrder(symbol, 'buy', positionSize, undefined, params);
 
-            const insertTrade = db.prepare(`
-                INSERT INTO active_positions (symbol, entry_price, size, side, stop_loss, take_profit)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `);
-            insertTrade.run(symbol, currentPrice, positionSize, 'buy', formattedSL, formattedTP);
+            db.prepare(`INSERT INTO active_positions (symbol, entry_price, size, side, stop_loss, take_profit) VALUES (?, ?, ?, ?, ?, ?)`)
+              .run(symbol, currentPrice, positionSize, 'buy', formattedSL, formattedTP);
 
-            // postavi cooldown za ovaj simbol
             db.prepare('INSERT OR REPLACE INTO symbol_cooldown (symbol, last_trade_ts) VALUES (?, ?)').run(symbol, Date.now());
 
-            console.log(`${tag} ${symbol} OPEN LONG | entry=$${currentPrice} sl=$${formattedSL} tp=$${formattedTP} size=${positionSize} lev=${leverage}x`);
+            console.log(`${tag} ${symbol} OPEN LONG | entry=$${currentPrice} sl=$${formattedSL} tp=$${formattedTP} size=${positionSize} lev=${leverage}x atr=${atr?.toFixed(4)}`);
 
-            const msg = `🟢 <b>NOVI LONG TRADE</b>\n\n<b>Par:</b> ${symbol}\n<b>Ulaz:</b> $${currentPrice}\n<b>SL:</b> $${formattedSL}\n<b>TP:</b> $${formattedTP}\n<b>Veličina:</b> ${positionSize}`;
-            await sendTelegramMessage(msg);
+            const msg = `🟢 <b>NOVI LONG TRADE</b>\n\n<b>Par:</b> ${symbol}\n<b>Ulaz:</b> $${currentPrice}\n<b>SL:</b> $${formattedSL} (1.5×ATR)\n<b>TP:</b> $${formattedTP} (3×ATR)\n<b>Veličina:</b> ${positionSize}\n<b>Leverage:</b> ${leverage}x\n<b>Kelly rizik:</b> ${kellyRisk.toFixed(2)}%`;
+            await sendTelegramMessage(msg, tradeKeyboard(symbol));
         } catch (error) {
             console.error(`${tag} ${symbol} ❌ Greška pri otvaranju LONG:`, error.message);
         }
     }
 
-    // --- LOGIKA ZA SHORT ---
-    else if (isDowntrend && isOverbought && isBearishMomentum) {
-        console.log(`${tag} ${symbol} SIGNAL SHORT | downtrend=${isDowntrend} overbought=${isOverbought} bearishMom=${isBearishMomentum} | price=${currentPrice} rsi=${rsi} ema=${ema} macdHist=${macd.histogram}`);
+    // ── SHORT logika ──────────────────────────────────────────────────────
+    else if (isDowntrend && isOverbought && isBearishMomentum && isRsiFalling) {
+        // MTF potvrda: 1h i 4h moraju biti bearish
+        if (!mtfBearish) {
+            console.log(`${tag} ${symbol} SKIP SHORT: MTF potvrda nije zadovoljena (1h/4h uptrend)`);
+            return;
+        }
 
-        const slPrice = currentPrice * (1 + slPercent);
-        const tpPrice = currentPrice * (1 - (slPercent * 2));
+        // Funding rate provjera
+        if (await isFundingRateUnfavorable(exchange, symbol, 'sell')) {
+            console.log(`${tag} ${symbol} SKIP SHORT: funding rate nepovoljan za SHORT`);
+            return;
+        }
+
+        console.log(`${tag} ${symbol} SIGNAL SHORT | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum} rsiFalling=${isRsiFalling} adx=${adx?.toFixed(1)} mtfBearish=${mtfBearish} kelly=${kellyRisk.toFixed(2)}% | price=${currentPrice} rsi=${rsi?.toFixed(2)} atr=${atr?.toFixed(4)}`);
+
+        const slPrice = currentPrice + slDistance;
+        const tpPrice = currentPrice - tpDistance;
         const lossPerCoin = slPrice - currentPrice;
         let positionSize = maxLossAmount / lossPerCoin;
 
@@ -115,39 +237,34 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
         }
 
         try {
-            try {
-                await exchange.setLeverage(leverage, symbol);
-            } catch (levErr) {
-                console.warn(`⚠️  Leverage već postavljen ili nije podržan za ${symbol}:`, levErr.message);
+            try { await exchange.setLeverage(leverage, symbol); } catch (levErr) {
+                console.warn(`⚠️  Leverage greška za ${symbol}:`, levErr.message);
             }
 
             const params = { stopLossPrice: formattedSL, takeProfitPrice: formattedTP };
             await exchange.createMarketOrder(symbol, 'sell', positionSize, undefined, params);
 
-            const insertTrade = db.prepare(`
-                INSERT INTO active_positions (symbol, entry_price, size, side, stop_loss, take_profit)
-                VALUES (?, ?, ?, ?, ?, ?)
-            `);
-            insertTrade.run(symbol, currentPrice, positionSize, 'sell', formattedSL, formattedTP);
+            db.prepare(`INSERT INTO active_positions (symbol, entry_price, size, side, stop_loss, take_profit) VALUES (?, ?, ?, ?, ?, ?)`)
+              .run(symbol, currentPrice, positionSize, 'sell', formattedSL, formattedTP);
 
-            // postavi cooldown za ovaj simbol
             db.prepare('INSERT OR REPLACE INTO symbol_cooldown (symbol, last_trade_ts) VALUES (?, ?)').run(symbol, Date.now());
 
-            console.log(`${tag} ${symbol} OPEN SHORT | entry=$${currentPrice} sl=$${formattedSL} tp=$${formattedTP} size=${positionSize} lev=${leverage}x`);
+            console.log(`${tag} ${symbol} OPEN SHORT | entry=$${currentPrice} sl=$${formattedSL} tp=$${formattedTP} size=${positionSize} lev=${leverage}x atr=${atr?.toFixed(4)}`);
 
-            const msg = `🔴 <b>NOVI SHORT TRADE</b>\n\n<b>Par:</b> ${symbol}\n<b>Ulaz:</b> $${currentPrice}\n<b>SL:</b> $${formattedSL}\n<b>TP:</b> $${formattedTP}\n<b>Veličina:</b> ${positionSize}`;
-            await sendTelegramMessage(msg);
+            const msg = `🔴 <b>NOVI SHORT TRADE</b>\n\n<b>Par:</b> ${symbol}\n<b>Ulaz:</b> $${currentPrice}\n<b>SL:</b> $${formattedSL} (1.5×ATR)\n<b>TP:</b> $${formattedTP} (3×ATR)\n<b>Veličina:</b> ${positionSize}\n<b>Leverage:</b> ${leverage}x\n<b>Kelly rizik:</b> ${kellyRisk.toFixed(2)}%`;
+            await sendTelegramMessage(msg, tradeKeyboard(symbol));
         } catch (error) {
             console.error(`${tag} ${symbol} ❌ Greška pri otvaranju SHORT:`, error.message);
         }
     }
 
-    // --- NEMA SIGNALA ---
+    // ── Nema signala ──────────────────────────────────────────────────────
     else {
         console.log(
-            `${tag} ${symbol} NO SIGNAL | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum}` +
-            ` | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum}` +
-            ` | price=${currentPrice} rsi=${rsi.toFixed(2)} ema=${ema.toFixed(4)} macdHist=${macd.histogram.toFixed(6)}`
+            `${tag} ${symbol} NO SIGNAL | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum} rsiRising=${isRsiRising}` +
+            ` | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum} rsiFalling=${isRsiFalling}` +
+            ` | adx=${adx?.toFixed(1)} mtfBull=${mtfBullish} mtfBear=${mtfBearish}` +
+            ` | price=${currentPrice} rsi=${rsi?.toFixed(2)} rsiPrev=${rsiPrev?.toFixed(2) ?? 'n/a'} ema=${ema?.toFixed(4)} macdHist=${macd?.histogram?.toFixed(6)} atr=${atr?.toFixed(4)} vol=${currentVolume?.toFixed(0)} volSMA=${volumeSMA?.toFixed(0)}`
         );
     }
 }

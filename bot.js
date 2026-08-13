@@ -1,11 +1,10 @@
 require('dotenv').config();
 const ccxt = require('ccxt');
 const { startServer } = require('./server');
-const { db } = require('./db');
+const { db, isDailyDrawdownBreached } = require('./db');
 const { getIndicators } = require('./strategies/indicators');
 const { evaluateAndTrade } = require('./strategies/trend_pullback');
-const { syncPositions } = require('./strategies/position_manager');
-const { TRADING_PAIRS } = require('./config');
+const { syncPositions, monitorTrailingStops } = require('./strategies/position_manager');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -18,6 +17,16 @@ const exchange = new ccxt.binance({
 
 let isCycleRunning = false;
 let cycleCounter = 0;
+
+// Stanje bota koje server.js može čitati za richer /api/status
+const botState = {
+    cycleCounter: 0,
+    isCycleRunning: false,
+    lastCycleStartedAt: null,
+    lastCycleEndedAt: null,
+    lastPrices: {}
+};
+global.botState = botState;
 
 function getUsdcAvailableBalance(balance) {
     // 1) USDⓈ-M futures specifično: info.assets[*].availableBalance
@@ -75,6 +84,9 @@ async function checkMarkets() {
     isCycleRunning = true;
     const cycleId = ++cycleCounter;
     const startedAt = Date.now();
+    botState.isCycleRunning = true;
+    botState.cycleCounter = cycleId;
+    botState.lastCycleStartedAt = new Date().toISOString();
 
     try {
         const botStatus = db.prepare('SELECT value FROM settings WHERE key = ?').get('BOT_ACTIVE');
@@ -102,6 +114,12 @@ async function checkMarkets() {
 
         if (usdcBalance < 20) {
             console.log(`[CYCLE ${cycleId}] Nedovoljan free USDC (${usdcBalance}). Minimum je 20.`);
+            return;
+        }
+
+        // DAILY DRAWDOWN CIRCUIT BREAKER: pauzira novi entry za taj dan ako je gubitak prevelik
+        if (isDailyDrawdownBreached(db, usdcBalance)) {
+            console.warn(`[CYCLE ${cycleId}] ⛔ Dnevni drawdown limit dostignut — preskačem novi entry.`);
             return;
         }
 
@@ -142,12 +160,11 @@ async function checkMarkets() {
                 console.log(`[CYCLE ${cycleId}] ${symbol} -> dohvat indikatora...`);
                 const indicators = await getIndicators(exchange, symbol, '15m', 100);
 
-                // puna provjera - ne samo da indicators postoji, nego da su
-                // rsi/ema/macd.histogram stvarno izračunati (rani start = nema dosta svijeća)
                 if (
                     !indicators ||
                     indicators.currentPrice == null ||
                     indicators.rsi == null ||
+                    indicators.rsiPrev == null ||
                     indicators.ema == null ||
                     !indicators.macd ||
                     indicators.macd.histogram == null
@@ -157,8 +174,9 @@ async function checkMarkets() {
                 }
 
                 console.log(
-                    `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi} ema=${indicators.ema} macdHist=${indicators.macd.histogram}`
+                    `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi?.toFixed(2)} ema=${indicators.ema?.toFixed(4)} macdHist=${indicators.macd.histogram?.toFixed(6)} adx=${indicators.adx?.toFixed(1)} mtfBull=${indicators.mtfBullish} mtfBear=${indicators.mtfBearish} vol=${indicators.currentVolume?.toFixed(0)} volSMA=${indicators.volumeSMA?.toFixed(0)}`
                 );
+                botState.lastPrices[symbol] = indicators.currentPrice;
 
                 await evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, cycleId);
             } catch (symbolError) {
@@ -174,6 +192,8 @@ async function checkMarkets() {
         const durationMs = Date.now() - startedAt;
         console.log(`[CYCLE ${cycleId}] ■ Kraj ciklusa (${durationMs} ms)`);
         isCycleRunning = false;
+        botState.isCycleRunning = false;
+        botState.lastCycleEndedAt = new Date().toISOString();
     }
 }
 
@@ -193,6 +213,9 @@ async function startBot() {
         // pokreni odmah prvi ciklus, pa onda periodično
         await checkMarkets();
         setInterval(checkMarkets, 15000);
+
+        // Trailing stop monitor: svakih 30s neovisno od entry ciklusa
+        setInterval(() => monitorTrailingStops(exchange, db), 30000);
     } catch (error) {
         console.error('Kritična greška:', error.message);
         process.exit(1);
