@@ -10,9 +10,10 @@ echo "🚀 Starting crypto-bot deployment..."
 # Navigate to project directory
 cd /root/crypto-bot
 
-# Pull latest changes
+# Pull latest changes (hard reset to avoid diverged branch issues)
 echo "📥 Pulling latest changes from GitHub..."
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 
 # Clean and install dependencies
 echo "📦 Installing dependencies..."
