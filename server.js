@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const { rateLimit } = require('express-rate-limit');
 const { db } = require('./db');
+const { TRADING_PAIRS } = require('./config');
 const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 
 const app = express();
