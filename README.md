@@ -7,7 +7,7 @@ Automated cryptocurrency trading bot for Binance Futures with technical analysis
 - 🔄 **Automated Trading**: Trades on 6 major crypto pairs (BTC, ETH, BNB, XRP, SOL, DOGE)
 - 📊 **Technical Analysis**: RSI, EMA, MACD indicators
 - 💰 **Risk Management**: Stop-loss and take-profit automation
-- 📈 **Live Dashboard**: Web interface at http://localhost:5050
+- 📈 **Live Dashboard**: Web interface at http://localhost:4000
 - 🔔 **Notifications**: Telegram alerts for trades
 - 💾 **Trade History**: SQLite database with P&L tracking
 - ⚡ **15-second Scan Interval**: Fast market analysis
@@ -62,7 +62,7 @@ chmod +x deploy.sh
 
 ## Dashboard
 
-Access the web dashboard at: `http://localhost:5050`
+Access the web dashboard at: `http://localhost:4000`
 
 **API Endpoints:**
 - `GET /api/status` - Bot status
@@ -113,9 +113,9 @@ npm install
 pm2 restart crypto-bot
 ```
 
-### Port 5050 already in use
+### Port 4000 already in use
 ```bash
-lsof -i :5050
+lsof -i :4000
 kill -9 <PID>
 ```
 

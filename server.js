@@ -6,7 +6,7 @@ const { TRADING_PAIRS } = require('./config');
 const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 
 const app = express();
-const PORT = 5050;
+const PORT = 4000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));

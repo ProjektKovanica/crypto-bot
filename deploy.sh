@@ -27,6 +27,6 @@ pm2 save
 # Show status
 echo ""
 echo "✅ Deployment complete!"
-echo "📊 Dashboard: http://145.223.116.178:5050"
+echo "📊 Dashboard: http://145.223.116.178:4000"
 echo ""
 pm2 logs crypto-bot
