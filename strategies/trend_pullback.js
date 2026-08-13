@@ -21,17 +21,21 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
         return;
     }
 
-    const { currentPrice, rsi, ema, macd } = indicators;
+    const { currentPrice, rsi, rsiPrev, ema, macd } = indicators;
 
     // Uvjeti za LONG
     const isUptrend = currentPrice > ema;
     const isOversold = rsi < 40;
     const isBullishMomentum = macd.histogram > 0;
+    // RSI divergence: RSI mora rasti iz oversold zone (potvrda okreta)
+    const isRsiRising = rsiPrev != null && rsi > rsiPrev;
 
     // Uvjeti za SHORT
     const isDowntrend = currentPrice < ema;
     const isOverbought = rsi > 60;
     const isBearishMomentum = macd.histogram < 0;
+    // RSI divergence: RSI mora padati iz overbought zone (potvrda okreta)
+    const isRsiFalling = rsiPrev != null && rsi < rsiPrev;
 
     const riskSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('RISK_PERCENT');
     const riskPercent = parseFloat(riskSetting.value) / 100;
@@ -51,8 +55,8 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     const leverage = Math.min(maxLeverage, Math.max(1, rawLeverage));
 
     // --- LOGIKA ZA LONG ---
-    if (isUptrend && isOversold && isBullishMomentum) {
-        console.log(`${tag} ${symbol} SIGNAL LONG | uptrend=${isUptrend} oversold=${isOversold} bullishMom=${isBullishMomentum} | price=${currentPrice} rsi=${rsi} ema=${ema} macdHist=${macd.histogram}`);
+    if (isUptrend && isOversold && isBullishMomentum && isRsiRising) {
+        console.log(`${tag} ${symbol} SIGNAL LONG | uptrend=${isUptrend} oversold=${isOversold} bullishMom=${isBullishMomentum} rsiRising=${isRsiRising} | price=${currentPrice} rsi=${rsi} rsiPrev=${rsiPrev} ema=${ema} macdHist=${macd.histogram}`);
 
         const slPrice = currentPrice * (1 - slPercent);
         const tpPrice = currentPrice * (1 + (slPercent * 2));
@@ -97,8 +101,8 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     }
 
     // --- LOGIKA ZA SHORT ---
-    else if (isDowntrend && isOverbought && isBearishMomentum) {
-        console.log(`${tag} ${symbol} SIGNAL SHORT | downtrend=${isDowntrend} overbought=${isOverbought} bearishMom=${isBearishMomentum} | price=${currentPrice} rsi=${rsi} ema=${ema} macdHist=${macd.histogram}`);
+    else if (isDowntrend && isOverbought && isBearishMomentum && isRsiFalling) {
+        console.log(`${tag} ${symbol} SIGNAL SHORT | downtrend=${isDowntrend} overbought=${isOverbought} bearishMom=${isBearishMomentum} rsiFalling=${isRsiFalling} | price=${currentPrice} rsi=${rsi} rsiPrev=${rsiPrev} ema=${ema} macdHist=${macd.histogram}`);
 
         const slPrice = currentPrice * (1 + slPercent);
         const tpPrice = currentPrice * (1 - (slPercent * 2));
@@ -145,9 +149,9 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
     // --- NEMA SIGNALA ---
     else {
         console.log(
-            `${tag} ${symbol} NO SIGNAL | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum}` +
-            ` | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum}` +
-            ` | price=${currentPrice} rsi=${rsi.toFixed(2)} ema=${ema.toFixed(4)} macdHist=${macd.histogram.toFixed(6)}`
+            `${tag} ${symbol} NO SIGNAL | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum} rsiRising=${isRsiRising}` +
+            ` | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum} rsiFalling=${isRsiFalling}` +
+            ` | price=${currentPrice} rsi=${rsi.toFixed(2)} rsiPrev=${rsiPrev != null ? rsiPrev.toFixed(2) : 'n/a'} ema=${ema.toFixed(4)} macdHist=${macd.histogram.toFixed(6)}`
         );
     }
 }

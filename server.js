@@ -32,9 +32,15 @@ app.use('/api', requireApiKey);
 app.get('/api/status', (req, res) => {
     try {
         const botStatus = db.prepare('SELECT value FROM settings WHERE key = ?').get('BOT_ACTIVE');
+        const state = global.botState || {};
         res.json({ 
             status: botStatus && botStatus.value === 'true' ? 'RUNNING' : 'STOPPED',
-            online: true
+            online: true,
+            cycleCounter: state.cycleCounter || 0,
+            isCycleRunning: state.isCycleRunning || false,
+            lastCycleStartedAt: state.lastCycleStartedAt || null,
+            lastCycleEndedAt: state.lastCycleEndedAt || null,
+            lastPrices: state.lastPrices || {}
         });
     } catch (error) {
         res.status(500).json({ error: error.message, online: false });
@@ -54,6 +60,12 @@ app.get('/api/positions', (req, res) => {
 app.post('/api/pause', (req, res) => {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('false', 'BOT_ACTIVE');
     res.json({ success: true, message: 'Bot pauziran - postojeće pozicije ostaju otvorene.' });
+});
+
+// API: Resume - nastavi s novim entryima nakon pauze
+app.post('/api/resume', (req, res) => {
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('true', 'BOT_ACTIVE');
+    res.json({ success: true, message: 'Bot nastavlja - novi entryji su ponovno aktivni.' });
 });
 
 // API: Pravi emergency stop - zaustavi bota I zatvori sve otvorene pozicije po marketu
@@ -151,9 +163,37 @@ app.get('/api/stats', (req, res) => {
     });
 });
 
+// API: Čitanje svih postavki bota
+const EDITABLE_SETTINGS = ['RISK_PERCENT', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'MAX_CONCURRENT_POSITIONS', 'COOLDOWN_SECONDS'];
+
+app.get('/api/settings', (req, res) => {
+    const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (' + EDITABLE_SETTINGS.map(() => '?').join(',') + ')').all(...EDITABLE_SETTINGS);
+    const settings = {};
+    for (const row of rows) settings[row.key] = row.value;
+    res.json(settings);
+});
+
+// API: Ažuriranje postavki bota
+app.post('/api/settings', (req, res) => {
+    const updates = req.body;
+    if (!updates || typeof updates !== 'object') {
+        return res.status(400).json({ error: 'Neispravan payload' });
+    }
+    const update = db.prepare('UPDATE settings SET value = ? WHERE key = ?');
+    const updateMany = db.transaction((entries) => {
+        for (const [key, value] of entries) {
+            if (EDITABLE_SETTINGS.includes(key)) {
+                update.run(String(value), key);
+            }
+        }
+    });
+    updateMany(Object.entries(updates));
+    res.json({ success: true });
+});
+
 function startServer(exchange) {
     global.exchange = exchange;
-    app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Dashboard online: http://145.223.116.178:${PORT}`));
+    app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Dashboard online: http://localhost:${PORT}`));
 }
 
 module.exports = { startServer };

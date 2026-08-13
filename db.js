@@ -23,7 +23,8 @@ function initDB() {
             size REAL,
             side TEXT,
             stop_loss REAL,
-            take_profit REAL
+            take_profit REAL,
+            open_time DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE TABLE IF NOT EXISTS settings (
@@ -54,6 +55,13 @@ function initDB() {
     insertSetting.run('COOLDOWN_SECONDS', '300');
 
     console.log('✅ Baza podataka je spremna.');
+
+    // Migracija: dodaj open_time ako stupac još ne postoji (za starije baze)
+    const cols = db.pragma('table_info(active_positions)').map(c => c.name);
+    if (!cols.includes('open_time')) {
+        db.exec("ALTER TABLE active_positions ADD COLUMN open_time DATETIME DEFAULT CURRENT_TIMESTAMP");
+        console.log('✅ Migracija: dodan stupac open_time u active_positions.');
+    }
 }
 
 initDB();

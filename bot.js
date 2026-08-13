@@ -22,6 +22,16 @@ const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC
 let isCycleRunning = false;
 let cycleCounter = 0;
 
+// Stanje bota koje server.js može čitati za richer /api/status
+const botState = {
+    cycleCounter: 0,
+    isCycleRunning: false,
+    lastCycleStartedAt: null,
+    lastCycleEndedAt: null,
+    lastPrices: {}
+};
+global.botState = botState;
+
 function getUsdcAvailableBalance(balance) {
     // 1) USDⓈ-M futures specifično: info.assets[*].availableBalance
     // Kod nekih account konfiguracija CCXT mapira USDC.free=0, ali availableBalance postoji.
@@ -78,6 +88,9 @@ async function checkMarkets() {
     isCycleRunning = true;
     const cycleId = ++cycleCounter;
     const startedAt = Date.now();
+    botState.isCycleRunning = true;
+    botState.cycleCounter = cycleId;
+    botState.lastCycleStartedAt = new Date().toISOString();
 
     try {
         const botStatus = db.prepare('SELECT value FROM settings WHERE key = ?').get('BOT_ACTIVE');
@@ -151,6 +164,7 @@ async function checkMarkets() {
                     !indicators ||
                     indicators.currentPrice == null ||
                     indicators.rsi == null ||
+                    indicators.rsiPrev == null ||
                     indicators.ema == null ||
                     !indicators.macd ||
                     indicators.macd.histogram == null
@@ -162,6 +176,7 @@ async function checkMarkets() {
                 console.log(
                     `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi} ema=${indicators.ema} macdHist=${indicators.macd.histogram}`
                 );
+                botState.lastPrices[symbol] = indicators.currentPrice;
 
                 await evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, cycleId);
             } catch (symbolError) {
@@ -177,6 +192,8 @@ async function checkMarkets() {
         const durationMs = Date.now() - startedAt;
         console.log(`[CYCLE ${cycleId}] ■ Kraj ciklusa (${durationMs} ms)`);
         isCycleRunning = false;
+        botState.isCycleRunning = false;
+        botState.lastCycleEndedAt = new Date().toISOString();
     }
 }
 

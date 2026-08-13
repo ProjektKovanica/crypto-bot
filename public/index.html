@@ -124,7 +124,18 @@
         </div>
 
         <button onclick="pause()" class="w-full mt-2 bg-yellow-900 text-yellow-500 p-2 border border-yellow-700">PAUSE_NEW_ENTRIES</button>
+        <button onclick="resumeBot()" class="w-full mt-2 bg-green-900 text-green-400 p-2 border border-green-700">RESUME_NEW_ENTRIES</button>
         <button onclick="emergencyStop()" class="w-full mt-2 bg-red-900 text-red-500 p-2 border border-red-700">EMERGENCY_STOP (zatvori sve)</button>
+
+        <!-- SETTINGS -->
+        <div class="mt-6 mb-4">
+            <div class="text-xs text-green-700 mb-2">POSTAVKE BOTA</div>
+            <div id="settingsPanel" class="border border-green-900 p-3 space-y-2 text-xs">
+                <div class="text-green-800">Učitavam postavke...</div>
+            </div>
+            <button onclick="saveSettings()" class="w-full mt-2 bg-green-900 text-green-300 p-2 border border-green-700">SPREMI POSTAVKE</button>
+            <div id="settingsMsg" class="text-xs mt-1 hidden"></div>
+        </div>
     </div>
 
     <script>
@@ -297,15 +308,19 @@
                     el.innerHTML = '<div class="text-green-800">Nema otvorenih pozicija.</div>';
                     return;
                 }
-                el.innerHTML = res.map(p => `
+                el.innerHTML = res.map(p => {
+                    const openedAt = p.open_time ? new Date(p.open_time).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--';
+                    return `
                     <div class="flex justify-between items-center border border-green-800 p-2">
                         <div>
                             <div>${p.symbol} <span class="${p.side === 'buy' ? 'text-green-400' : 'text-red-400'}">${p.side.toUpperCase()}</span></div>
                             <div class="text-[10px] text-green-700">Ulaz: $${p.entry_price} | SL: $${p.stop_loss} | TP: $${p.take_profit}</div>
+                            <div class="text-[10px] text-green-800">Otvoreno: ${openedAt}</div>
                         </div>
                         <button onclick="closePos('${p.symbol}')" class="text-red-500 underline text-xs">CLOSE</button>
                     </div>
-                `).join('');
+                `;
+                }).join('');
                 clearError();
             } catch (err) {
                 console.error('Positions error:', err);
@@ -413,6 +428,65 @@
             }
         }
 
+        async function resumeBot() {
+            try {
+                await apiFetch('/api/resume', { method: 'POST' });
+                alert('Bot nastavlja - novi entryji su aktivni.');
+            } catch (err) {
+                alert('Greška: ' + err.message);
+            }
+        }
+
+        // ---------- SETTINGS ----------
+        const SETTINGS_META = {
+            RISK_PERCENT:               { label: 'Rizik po trejdu (%)', type: 'number', step: '0.1', min: '0.1', max: '10' },
+            MAX_LEVERAGE:               { label: 'Max leverage (x)',     type: 'number', step: '1',   min: '1',   max: '125' },
+            LIQUIDATION_SAFETY_FACTOR:  { label: 'Likv. sigurnosni faktor (0–1)', type: 'number', step: '0.05', min: '0.1', max: '1' },
+            MAX_CONCURRENT_POSITIONS:   { label: 'Max istovremene pozicije', type: 'number', step: '1', min: '1', max: '20' },
+            COOLDOWN_SECONDS:           { label: 'Cooldown između trejdova (s)', type: 'number', step: '10', min: '0', max: '3600' }
+        };
+
+        async function loadSettings() {
+            try {
+                const s = await apiFetch('/api/settings');
+                const panel = document.getElementById('settingsPanel');
+                panel.innerHTML = Object.entries(SETTINGS_META).map(([key, meta]) => `
+                    <div class="flex justify-between items-center">
+                        <label class="text-green-700 w-2/3">${meta.label}</label>
+                        <input id="setting_${key}" type="${meta.type}" step="${meta.step}" min="${meta.min}" max="${meta.max}"
+                            value="${s[key] ?? ''}"
+                            class="bg-black border border-green-800 p-1 w-28 text-green-400 outline-none focus:border-green-500 text-right" />
+                    </div>
+                `).join('');
+            } catch (err) {
+                console.error('Settings load error:', err);
+            }
+        }
+
+        async function saveSettings() {
+            const msgEl = document.getElementById('settingsMsg');
+            const updates = {};
+            for (const key of Object.keys(SETTINGS_META)) {
+                const el = document.getElementById('setting_' + key);
+                if (el) updates[key] = el.value;
+            }
+            try {
+                await apiFetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updates)
+                });
+                msgEl.textContent = '✅ Postavke spremljene.';
+                msgEl.className = 'text-xs mt-1 text-green-400';
+                msgEl.classList.remove('hidden');
+                setTimeout(() => msgEl.classList.add('hidden'), 3000);
+            } catch (err) {
+                msgEl.textContent = '❌ Greška: ' + err.message;
+                msgEl.className = 'text-xs mt-1 text-red-500';
+                msgEl.classList.remove('hidden');
+            }
+        }
+
         async function emergencyStop() {
             if (!confirm('Ovo će zatvoriti SVE otvorene pozicije po tržišnoj cijeni. Nastaviti?')) return;
             try {
@@ -429,7 +503,7 @@
             initCharts();
             try {
                 await loadPairs();
-                await refreshAll();
+                await Promise.all([refreshAll(), loadSettings()]);
                 clearError();
                 setInterval(refreshAll, 5000);
             } catch (err) {
