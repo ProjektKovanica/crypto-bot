@@ -5,7 +5,7 @@ const { forceClosePosition, closeAllPositions } = require('./strategies/position
 
 const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC', 'DOGE/USDC'];
 const app = express();
-const PORT = 5050;
+const PORT = 4040;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
