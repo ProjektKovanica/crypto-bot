@@ -29,7 +29,7 @@
     <div class="max-w-2xl mx-auto">
         <div class="flex items-center justify-between border-b border-green-900 pb-2 mb-4">
             <h1 class="text-2xl">SYSTEM_MONITOR_V2</h1>
-            <span id="connStatus" class="text-xs text-green-700">●連 offline</span>
+            <span id="connStatus" class="text-xs text-red-500">● offline</span>
         </div>
 
         <div id="globalError" class="hidden mb-4 p-2 border border-red-700 text-red-400 text-xs"></div>
@@ -129,8 +129,6 @@
 
     <script>
         // ---------- AUTH ----------
-        // API ključ se pamti u localStorage (ovo je stvarna produkcijska stranica na
-        // tvom vlastitom VPS-u, ne Claude artifact, pa je localStorage ovdje sasvim uredu).
         let API_KEY = localStorage.getItem('dashboard_api_key') || '';
 
         function authHeaders() {
@@ -165,13 +163,9 @@
             }
         }
 
-        function logout() {
-            localStorage.removeItem('dashboard_api_key');
-            location.reload();
-        }
-
         // ---------- FETCH WRAPPER ----------
         function showError(message) {
+            console.error('Dashboard error:', message);
             const el = document.getElementById('globalError');
             el.textContent = '⚠️ ' + message;
             el.classList.remove('hidden');
@@ -186,32 +180,33 @@
         }
 
         async function apiFetch(url, options = {}) {
-            let res;
             try {
-                res = await fetch(url, { ...options, headers: { ...(options.headers || {}), ...authHeaders() } });
+                const res = await fetch(url, { 
+                    ...options, 
+                    headers: { ...(options.headers || {}), ...authHeaders() } 
+                });
+
+                if (res.status === 401) {
+                    localStorage.removeItem('dashboard_api_key');
+                    document.getElementById('loginOverlay').classList.remove('hidden');
+                    throw new Error('Sesija istekla, prijavi se ponovno.');
+                }
+
+                let data;
+                try {
+                    data = await res.json();
+                } catch (parseErr) {
+                    throw new Error(`Neispravan odgovor servera (status ${res.status})`);
+                }
+
+                if (!res.ok) {
+                    throw new Error(data.error || `Greška servera (status ${res.status})`);
+                }
+
+                return data;
             } catch (networkErr) {
                 throw new Error(`Server nedostupan (${networkErr.message})`);
             }
-
-            if (res.status === 401) {
-                // Ključ je u međuvremenu postao nevažeći - vrati na login
-                localStorage.removeItem('dashboard_api_key');
-                document.getElementById('loginOverlay').classList.remove('hidden');
-                throw new Error('Sesija istekla, prijavi se ponovno.');
-            }
-
-            let data;
-            try {
-                data = await res.json();
-            } catch (parseErr) {
-                throw new Error(`Neispravan odgovor servera (status ${res.status})`);
-            }
-
-            if (!res.ok) {
-                throw new Error(data.error || `Greška servera (status ${res.status})`);
-            }
-
-            return data;
         }
 
         // ---------- FORMATTING ----------
@@ -227,24 +222,28 @@
         let chart, candleSeries, equityChart, equitySeries;
 
         function initCharts() {
-            chart = LightweightCharts.createChart(document.getElementById('chart'), {
-                layout: { background: { color: '#000' }, textColor: '#16a34a' },
-                grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
-            });
-            candleSeries = chart.addCandlestickSeries();
+            try {
+                chart = LightweightCharts.createChart(document.getElementById('chart'), {
+                    layout: { background: { color: '#000' }, textColor: '#16a34a' },
+                    grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
+                });
+                candleSeries = chart.addCandlestickSeries();
 
-            equityChart = LightweightCharts.createChart(document.getElementById('equityChart'), {
-                layout: { background: { color: '#000' }, textColor: '#16a34a' },
-                grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
-            });
-            equitySeries = equityChart.addAreaSeries({
-                lineColor: '#22c55e', topColor: 'rgba(34,197,94,0.3)', bottomColor: 'rgba(34,197,94,0)'
-            });
+                equityChart = LightweightCharts.createChart(document.getElementById('equityChart'), {
+                    layout: { background: { color: '#000' }, textColor: '#16a34a' },
+                    grid: { vertLines: { color: '#052e16' }, horzLines: { color: '#052e16' } }
+                });
+                equitySeries = equityChart.addAreaSeries({
+                    lineColor: '#22c55e', topColor: 'rgba(34,197,94,0.3)', bottomColor: 'rgba(34,197,94,0)'
+                });
 
-            new ResizeObserver(() => {
-                chart.applyOptions({ width: document.getElementById('chart').clientWidth });
-                equityChart.applyOptions({ width: document.getElementById('equityChart').clientWidth });
-            }).observe(document.getElementById('chart').parentElement);
+                new ResizeObserver(() => {
+                    if (chart) chart.applyOptions({ width: document.getElementById('chart').clientWidth });
+                    if (equityChart) equityChart.applyOptions({ width: document.getElementById('equityChart').clientWidth });
+                }).observe(document.getElementById('chart').parentElement);
+            } catch (e) {
+                console.error('Chart init error:', e);
+            }
         }
 
         async function initChart() {
@@ -254,19 +253,28 @@
                 const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym.replace('/','')}&interval=15m&limit=100`);
                 if (!res.ok) throw new Error(`Binance API greška (status ${res.status})`);
                 const data = await res.json();
-                candleSeries.setData(data.map(d => ({ time: d[0] / 1000, open: +d[1], high: +d[2], low: +d[3], close: +d[4] })));
+                if (candleSeries && data.length > 0) {
+                    candleSeries.setData(data.map(d => ({ time: Math.floor(d[0] / 1000), open: +d[1], high: +d[2], low: +d[3], close: +d[4] })));
+                }
             } catch (err) {
-                showError('Ne mogu učitati graf: ' + err.message);
+                console.error('Chart load error:', err);
             }
         }
 
         // ---------- DATA LOADERS ----------
         async function loadPairs() {
-            const pairs = await apiFetch('/api/pairs');
-            const sel = document.getElementById('pair');
-            sel.innerHTML = '';
-            pairs.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
-            initChart();
+            try {
+                const pairs = await apiFetch('/api/pairs');
+                const sel = document.getElementById('pair');
+                sel.innerHTML = '';
+                if (Array.isArray(pairs)) {
+                    pairs.forEach(p => sel.innerHTML += `<option value="${p}">${p}</option>`);
+                    await initChart();
+                }
+                clearError();
+            } catch (err) {
+                showError('Parovi: ' + err.message);
+            }
         }
 
         async function loadBalance() {
@@ -277,7 +285,7 @@
                 document.getElementById('balUsed').textContent = fmt(b.used);
                 clearError();
             } catch (err) {
-                showError('Balans: ' + err.message);
+                console.error('Balance error:', err);
             }
         }
 
@@ -285,7 +293,7 @@
             try {
                 const res = await apiFetch('/api/positions');
                 const el = document.getElementById('pos');
-                if (res.length === 0) {
+                if (!Array.isArray(res) || res.length === 0) {
                     el.innerHTML = '<div class="text-green-800">Nema otvorenih pozicija.</div>';
                     return;
                 }
@@ -300,7 +308,7 @@
                 `).join('');
                 clearError();
             } catch (err) {
-                showError('Pozicije: ' + err.message);
+                console.error('Positions error:', err);
             }
         }
 
@@ -308,7 +316,7 @@
             try {
                 const trades = await apiFetch('/api/trades?limit=20');
                 const el = document.getElementById('tradeHistory');
-                if (trades.length === 0) {
+                if (!Array.isArray(trades) || trades.length === 0) {
                     el.innerHTML = '<div class="p-2 text-green-800">Još nema zatvorenih trejdova.</div>';
                     return;
                 }
@@ -320,7 +328,7 @@
                     </div>
                 `).join('');
             } catch (err) {
-                showError('Povijest trejdova: ' + err.message);
+                console.error('Trades error:', err);
             }
         }
 
@@ -338,7 +346,7 @@
                 document.getElementById('statAvgLoss').textContent = s.losses > 0 ? fmtSigned(s.avgLoss) : '--';
                 document.getElementById('statAvgLoss').className = 'text-sm text-red-500';
 
-                if (s.equityCurve && s.equityCurve.length > 0) {
+                if (s.equityCurve && Array.isArray(s.equityCurve) && s.equityCurve.length > 0 && equitySeries) {
                     const seen = new Set();
                     const data = s.equityCurve
                         .map(e => ({ time: Math.floor(new Date(e.timestamp).getTime() / 1000), value: e.cumulative_pnl }))
@@ -348,7 +356,9 @@
                             return true;
                         })
                         .sort((a, b) => a.time - b.time);
-                    equitySeries.setData(data);
+                    if (data.length > 0) {
+                        equitySeries.setData(data);
+                    }
                 }
 
                 const symEl = document.getElementById('bySymbol');
@@ -366,13 +376,18 @@
                             </div>
                         `).join('');
                 }
+                clearError();
             } catch (err) {
-                showError('Statistika: ' + err.message);
+                console.error('Stats error:', err);
             }
         }
 
         async function refreshAll() {
-            await Promise.all([loadBalance(), loadPositions(), loadTrades(), loadStats()]);
+            try {
+                await Promise.all([loadBalance(), loadPositions(), loadTrades(), loadStats()]);
+            } catch (e) {
+                console.error('Refresh error:', e);
+            }
         }
 
         // ---------- ACTIONS ----------
@@ -383,7 +398,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ symbol: sym })
                 });
-                refreshAll();
+                await refreshAll();
             } catch (err) {
                 alert('Greška pri zatvaranju pozicije: ' + err.message);
             }
@@ -403,7 +418,7 @@
             try {
                 const res = await apiFetch('/api/emergency-stop', { method: 'POST' });
                 alert('Bot zaustavljen, pozicije zatvorene: ' + JSON.stringify(res.results));
-                refreshAll();
+                await refreshAll();
             } catch (err) {
                 alert('Greška: ' + err.message);
             }
@@ -423,13 +438,12 @@
         }
 
         if (API_KEY) {
-            // Već imamo spremljen ključ - probaj direktno, s fallbackom na login ako je nevažeći
             document.getElementById('loginOverlay').classList.add('hidden');
-            boot().catch(() => {
+            boot().catch(err => {
+                console.error('Boot error:', err);
                 document.getElementById('loginOverlay').classList.remove('hidden');
             });
         }
-        // inače ostaje login overlay vidljiv, čeka doLogin()
     </script>
 </body>
 </html>
