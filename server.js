@@ -28,6 +28,19 @@ function requireApiKey(req, res, next) {
 
 app.use('/api', requireApiKey);
 
+// API: Status bota
+app.get('/api/status', (req, res) => {
+    try {
+        const botStatus = db.prepare('SELECT value FROM settings WHERE key = ?').get('BOT_ACTIVE');
+        res.json({ 
+            status: botStatus && botStatus.value === 'true' ? 'RUNNING' : 'STOPPED',
+            online: true
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message, online: false });
+    }
+});
+
 // API: Dohvat svih parova
 app.get('/api/pairs', (req, res) => res.json(TRADING_PAIRS));
 
@@ -81,7 +94,7 @@ app.get('/api/balance', async (req, res) => {
     }
 });
 
-// API: Povijest zatvorenih trejdova
+// API: povijest zatvorenih trejdova
 app.get('/api/trades', (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 500);
     const data = db.prepare('SELECT * FROM trades ORDER BY timestamp DESC LIMIT ?').all(limit);
