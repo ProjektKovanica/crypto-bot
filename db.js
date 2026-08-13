@@ -30,6 +30,11 @@ function initDB() {
             key TEXT PRIMARY KEY,
             value TEXT
         );
+
+        CREATE TABLE IF NOT EXISTS symbol_cooldown (
+            symbol TEXT PRIMARY KEY,
+            last_trade_ts INTEGER NOT NULL
+        );
     `);
 
     const insertSetting = db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
@@ -43,6 +48,10 @@ function initDB() {
     // LIQUIDATION_SAFETY_FACTOR = koliki dio teoretski max leveragea koristiti (0.5 = pola).
     insertSetting.run('MAX_LEVERAGE', '10');
     insertSetting.run('LIQUIDATION_SAFETY_FACTOR', '0.5');
+    // Cooldown između dva uzastopna entry-ja za isti simbol (u sekundama).
+    // Sprječava ponovni entry odmah nakon što se pozicija zatvori ili podmirila
+    // po SL/TP-u dok se tržišni uvjeti nisu promijenili.
+    insertSetting.run('COOLDOWN_SECONDS', '300');
 
     console.log('✅ Baza podataka je spremna.');
 }

@@ -1,17 +1,25 @@
 const { sendTelegramMessage } = require('../notifier');
 
-async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance) {
+async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, cycleId) {
+    const tag = cycleId ? `[CYCLE ${cycleId}]` : '[TRADE]';
+
     // KRITIČNO #2: ne otvaraj novu poziciju ako već postoji aktivna za ovaj par.
     // Bez ovoga je moguć dupli entry ako se uvjeti opet poklope prije nego
     // se DB/burza stignu sinkronizirati.
     const existingPosition = db.prepare('SELECT id FROM active_positions WHERE symbol = ?').get(symbol);
-    if (existingPosition) return;
+    if (existingPosition) {
+        console.log(`${tag} ${symbol} SKIP: aktivna pozicija već postoji (id=${existingPosition.id})`);
+        return;
+    }
 
     // Bonus: hard cap na broj istovremeno otvorenih pozicija (settings.MAX_CONCURRENT_POSITIONS)
     const maxPosSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_CONCURRENT_POSITIONS');
     const maxConcurrent = maxPosSetting ? parseInt(maxPosSetting.value, 10) : 3;
     const openCount = db.prepare('SELECT COUNT(*) as c FROM active_positions').get().c;
-    if (openCount >= maxConcurrent) return;
+    if (openCount >= maxConcurrent) {
+        console.log(`${tag} ${symbol} SKIP: dostignut maks. broj pozicija (${openCount}/${maxConcurrent})`);
+        return;
+    }
 
     const { currentPrice, rsi, ema, macd } = indicators;
 
@@ -44,6 +52,8 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance) {
 
     // --- LOGIKA ZA LONG ---
     if (isUptrend && isOversold && isBullishMomentum) {
+        console.log(`${tag} ${symbol} SIGNAL LONG | uptrend=${isUptrend} oversold=${isOversold} bullishMom=${isBullishMomentum} | price=${currentPrice} rsi=${rsi} ema=${ema} macdHist=${macd.histogram}`);
+
         const slPrice = currentPrice * (1 - slPercent);
         const tpPrice = currentPrice * (1 + (slPercent * 2));
         const lossPerCoin = currentPrice - slPrice;
@@ -53,7 +63,10 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance) {
         const formattedSL = Number(exchange.priceToPrecision(symbol, slPrice));
         const formattedTP = Number(exchange.priceToPrecision(symbol, tpPrice));
 
-        if (positionSize * currentPrice < 10) return;
+        if (positionSize * currentPrice < 10) {
+            console.log(`${tag} ${symbol} SKIP LONG: pozicija premala ($${(positionSize * currentPrice).toFixed(2)} < $10)`);
+            return;
+        }
 
         try {
             try {
@@ -71,15 +84,22 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance) {
             `);
             insertTrade.run(symbol, currentPrice, positionSize, 'buy', formattedSL, formattedTP);
 
+            // postavi cooldown za ovaj simbol
+            db.prepare('INSERT OR REPLACE INTO symbol_cooldown (symbol, last_trade_ts) VALUES (?, ?)').run(symbol, Date.now());
+
+            console.log(`${tag} ${symbol} OPEN LONG | entry=$${currentPrice} sl=$${formattedSL} tp=$${formattedTP} size=${positionSize} lev=${leverage}x`);
+
             const msg = `🟢 <b>NOVI LONG TRADE</b>\n\n<b>Par:</b> ${symbol}\n<b>Ulaz:</b> $${currentPrice}\n<b>SL:</b> $${formattedSL}\n<b>TP:</b> $${formattedTP}\n<b>Veličina:</b> ${positionSize}`;
             await sendTelegramMessage(msg);
         } catch (error) {
-            console.error(`❌ Greška pri otvaranju LONG za ${symbol}:`, error.message);
+            console.error(`${tag} ${symbol} ❌ Greška pri otvaranju LONG:`, error.message);
         }
     }
 
     // --- LOGIKA ZA SHORT ---
     else if (isDowntrend && isOverbought && isBearishMomentum) {
+        console.log(`${tag} ${symbol} SIGNAL SHORT | downtrend=${isDowntrend} overbought=${isOverbought} bearishMom=${isBearishMomentum} | price=${currentPrice} rsi=${rsi} ema=${ema} macdHist=${macd.histogram}`);
+
         const slPrice = currentPrice * (1 + slPercent);
         const tpPrice = currentPrice * (1 - (slPercent * 2));
         const lossPerCoin = slPrice - currentPrice;
@@ -89,7 +109,10 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance) {
         const formattedSL = Number(exchange.priceToPrecision(symbol, slPrice));
         const formattedTP = Number(exchange.priceToPrecision(symbol, tpPrice));
 
-        if (positionSize * currentPrice < 10) return;
+        if (positionSize * currentPrice < 10) {
+            console.log(`${tag} ${symbol} SKIP SHORT: pozicija premala ($${(positionSize * currentPrice).toFixed(2)} < $10)`);
+            return;
+        }
 
         try {
             try {
@@ -107,11 +130,25 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance) {
             `);
             insertTrade.run(symbol, currentPrice, positionSize, 'sell', formattedSL, formattedTP);
 
+            // postavi cooldown za ovaj simbol
+            db.prepare('INSERT OR REPLACE INTO symbol_cooldown (symbol, last_trade_ts) VALUES (?, ?)').run(symbol, Date.now());
+
+            console.log(`${tag} ${symbol} OPEN SHORT | entry=$${currentPrice} sl=$${formattedSL} tp=$${formattedTP} size=${positionSize} lev=${leverage}x`);
+
             const msg = `🔴 <b>NOVI SHORT TRADE</b>\n\n<b>Par:</b> ${symbol}\n<b>Ulaz:</b> $${currentPrice}\n<b>SL:</b> $${formattedSL}\n<b>TP:</b> $${formattedTP}\n<b>Veličina:</b> ${positionSize}`;
             await sendTelegramMessage(msg);
         } catch (error) {
-            console.error(`❌ Greška pri otvaranju SHORT za ${symbol}:`, error.message);
+            console.error(`${tag} ${symbol} ❌ Greška pri otvaranju SHORT:`, error.message);
         }
+    }
+
+    // --- NEMA SIGNALA ---
+    else {
+        console.log(
+            `${tag} ${symbol} NO SIGNAL | uptrend=${isUptrend} oversold=${isOversold} bullMom=${isBullishMomentum}` +
+            ` | downtrend=${isDowntrend} overbought=${isOverbought} bearMom=${isBearishMomentum}` +
+            ` | price=${currentPrice} rsi=${rsi.toFixed(2)} ema=${ema.toFixed(4)} macdHist=${macd.histogram.toFixed(6)}`
+        );
     }
 }
 
