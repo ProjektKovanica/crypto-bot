@@ -26,6 +26,28 @@ function requireApiKey(req, res, next) {
     next();
 }
 
+// Jednostavan in-memory rate limiter: max `maxReqs` zahtjeva po IP-u unutar `windowMs`
+function createRateLimiter(windowMs, maxReqs) {
+    const hits = new Map();
+    return function rateLimiter(req, res, next) {
+        const ip = req.ip || req.socket.remoteAddress || 'unknown';
+        const now = Date.now();
+        const entry = hits.get(ip) || { count: 0, resetAt: now + windowMs };
+        if (now > entry.resetAt) {
+            entry.count = 0;
+            entry.resetAt = now + windowMs;
+        }
+        entry.count += 1;
+        hits.set(ip, entry);
+        if (entry.count > maxReqs) {
+            return res.status(429).json({ error: 'Previše zahtjeva, pokušaj ponovo za malo.' });
+        }
+        next();
+    };
+}
+
+const settingsRateLimiter = createRateLimiter(60 * 1000, 30);
+
 app.use('/api', requireApiKey);
 
 // API: Status bota
@@ -63,7 +85,7 @@ app.post('/api/pause', (req, res) => {
 });
 
 // API: Resume - nastavi s novim entryima nakon pauze
-app.post('/api/resume', (req, res) => {
+app.post('/api/resume', settingsRateLimiter, (req, res) => {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('true', 'BOT_ACTIVE');
     res.json({ success: true, message: 'Bot nastavlja - novi entryji su ponovno aktivni.' });
 });
@@ -166,7 +188,7 @@ app.get('/api/stats', (req, res) => {
 // API: Čitanje svih postavki bota
 const EDITABLE_SETTINGS = ['RISK_PERCENT', 'MAX_LEVERAGE', 'LIQUIDATION_SAFETY_FACTOR', 'MAX_CONCURRENT_POSITIONS', 'COOLDOWN_SECONDS'];
 
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', settingsRateLimiter, (req, res) => {
     const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (' + EDITABLE_SETTINGS.map(() => '?').join(',') + ')').all(...EDITABLE_SETTINGS);
     const settings = {};
     for (const row of rows) settings[row.key] = row.value;
@@ -174,7 +196,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 // API: Ažuriranje postavki bota
-app.post('/api/settings', (req, res) => {
+app.post('/api/settings', settingsRateLimiter, (req, res) => {
     const updates = req.body;
     if (!updates || typeof updates !== 'object') {
         return res.status(400).json({ error: 'Neispravan payload' });
