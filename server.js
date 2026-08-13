@@ -72,7 +72,6 @@ app.post('/api/resume', settingsRateLimiter, (req, res) => {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('true', 'BOT_ACTIVE');
     res.json({ success: true, message: 'Bot nastavlja - novi entryji su ponovno aktivni.' });
 });
-});
 
 // API: Pravi emergency stop - zaustavi bota I zatvori sve otvorene pozicije po marketu
 app.post('/api/emergency-stop', async (req, res) => {
