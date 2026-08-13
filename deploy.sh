@@ -18,6 +18,7 @@ git pull origin main
 echo "📦 Installing dependencies..."
 rm -rf node_modules package-lock.json
 npm install
+npm rebuild
 
 # Restart bot with PM2
 echo "🔄 Restarting bot..."
