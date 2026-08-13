@@ -15,10 +15,6 @@ const exchange = new ccxt.binance({
     options: { defaultType: 'future' }
 });
 
-// NAPOMENA: server.js ima svoj TRADING_PAIRS bez BNB/USDC (vidi popravak niže) -
-// ako se ne poklapaju, dashboard dropdown neće nužno pokazivati sve parove kojima bot trguje.
-const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC', 'DOGE/USDC'];
-
 let isCycleRunning = false;
 let cycleCounter = 0;
 

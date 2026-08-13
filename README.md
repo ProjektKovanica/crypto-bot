@@ -70,7 +70,10 @@ Access the web dashboard at: `http://localhost:5050`
 - `GET /api/trades` - Trade history
 - `GET /api/balance` - Account balance
 - `GET /api/stats` - Performance statistics
+- `GET /api/settings` - Bot settings (risk, leverage, cooldown, etc.)
+- `POST /api/settings` - Update a bot setting (`{ key, value }`)
 - `POST /api/pause` - Pause new entries
+- `POST /api/resume` - Resume new entries
 - `POST /api/emergency-stop` - Close all positions
 - `POST /api/close-position` - Close specific position
 
@@ -81,6 +84,7 @@ crypto-bot/
 ├── bot.js                 # Main trading loop
 ├── server.js              # Express dashboard server
 ├── db.js                  # Database setup
+├── config.js              # Shared configuration (trading pairs)
 ├── strategies/
 │   ├── indicators.js      # Technical indicators (RSI, EMA, MACD)
 │   ├── trend_pullback.js  # Trading logic & entry signals

@@ -4,9 +4,8 @@ const { rateLimit } = require('express-rate-limit');
 const { db } = require('./db');
 const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 
-const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC', 'DOGE/USDC'];
 const app = express();
-const PORT = 4040;
+const PORT = 5050;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -72,6 +71,7 @@ app.post('/api/pause', (req, res) => {
 app.post('/api/resume', settingsRateLimiter, (req, res) => {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run('true', 'BOT_ACTIVE');
     res.json({ success: true, message: 'Bot nastavlja - novi entryji su ponovno aktivni.' });
+});
 });
 
 // API: Pravi emergency stop - zaustavi bota I zatvori sve otvorene pozicije po marketu
@@ -146,12 +146,31 @@ app.get('/api/balance', async (req, res) => {
     try {
         if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
         const balance = await global.exchange.fetchBalance();
-        const usdc = balance['USDC'] || { free: 0, used: 0, total: 0 };
-        res.json({
-            free: usdc.free || 0,
-            used: usdc.used || 0,
-            total: usdc.total || 0
-        });
+
+        // Robustna ekstrakcija — isti pristup kao u bot.js getUsdcAvailableBalance()
+        let free = 0, used = 0, total = 0;
+        try {
+            const assets = balance?.info?.assets;
+            if (Array.isArray(assets)) {
+                const a = assets.find(x => String(x.asset).toUpperCase() === 'USDC')
+                       || assets.find(x => String(x.asset).toUpperCase() === 'U');
+                if (a) {
+                    free  = parseFloat(a.availableBalance) || 0;
+                    total = parseFloat(a.walletBalance)    || 0;
+                    used  = Math.max(0, total - free);
+                }
+            }
+        } catch (_) {}
+
+        // Fallback: CCXT unified map
+        if (!free && !total) {
+            const u = balance?.USDC || {};
+            free  = u.free  || 0;
+            used  = u.used  || 0;
+            total = u.total || 0;
+        }
+
+        res.json({ free, used, total });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
