@@ -2,6 +2,7 @@ require('dotenv').config();
 const ccxt = require('ccxt');
 const { startServer } = require('./server');
 const { db, isDailyDrawdownBreached } = require('./db');
+const { TRADING_PAIRS } = require('./config');
 const { getIndicators } = require('./strategies/indicators');
 const { evaluateAndTrade } = require('./strategies/trend_pullback');
 const { syncPositions, monitorTrailingStops } = require('./strategies/position_manager');
