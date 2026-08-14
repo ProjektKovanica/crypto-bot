@@ -20,7 +20,6 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Dohvati ispravan CCXT format simbola (npr. 'DOGE/USDC:USDC')
 function normalizeSymbol(symbol) {
   if (symbol.includes('/')) return symbol;
   
@@ -59,13 +58,11 @@ async function openLong(symbol, quantity, leverage = 10, maxRetries = 3) {
 
         await exchange.createOrder(normalizedSymbol, 'STOP_MARKET', 'sell', quantity, null, {
           stopPrice: stopLossPrice,
-          reduceOnly: true,
           positionSide: 'LONG'
         });
 
         await exchange.createOrder(normalizedSymbol, 'TAKE_PROFIT_MARKET', 'sell', quantity, null, {
           stopPrice: takeProfitPrice,
-          reduceOnly: true,
           positionSide: 'LONG'
         });
 
@@ -127,13 +124,11 @@ async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
 
         await exchange.createOrder(normalizedSymbol, 'STOP_MARKET', 'buy', quantity, null, {
           stopPrice: stopLossPrice,
-          reduceOnly: true,
           positionSide: 'SHORT'
         });
 
         await exchange.createOrder(normalizedSymbol, 'TAKE_PROFIT_MARKET', 'buy', quantity, null, {
           stopPrice: takeProfitPrice,
-          reduceOnly: true,
           positionSide: 'SHORT'
         });
 
@@ -171,7 +166,6 @@ async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
 
 async function main() {
   await init();
-  // Test trade: LONG DOGE/USDC 100 DOGE @ 10x leverage (~$7 USDC)
   await openLong('DOGEUSDC', 100, 10);
 }
 
