@@ -1,5 +1,5 @@
 const { sendTelegramMessage, tradeKeyboard } = require('../notifier');
-const { entryParams } = require('../position-mode');
+const { entryParams, positionModeName, isHedgeMode } = require('../position-mode');
 
 // ── Kelly Criterion (half-Kelly) ────────────────────────────────────────────
 // Vraća udio portfelja za uložiti na temelju prošlih trejdova za dani simbol.
@@ -206,6 +206,13 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
             await sendTelegramMessage(msg, tradeKeyboard(symbol));
         } catch (error) {
             console.error(`${tag} ${symbol} ❌ Greška pri otvaranju LONG:`, error.message);
+            // Self-diagnosing context: without this, a -4061 gives no clue
+            // whether mode detection ran or what params were actually sent.
+            console.error(`${tag} ${symbol}    mode=${positionModeName()} params=${JSON.stringify(params)}`);
+            if (String(error.message).includes('-4061')) {
+                console.error(`${tag} ${symbol}    -4061 = positionSide mismatch.`);
+                console.error(`${tag} ${symbol}    ${isHedgeMode() ? 'Hedge detected but Binance disagrees — check API key permissions.' : 'One-way assumed but account is likely Hedge — run: npm run diagnose'}`);
+            }
         }
     }
 
@@ -258,6 +265,13 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
             await sendTelegramMessage(msg, tradeKeyboard(symbol));
         } catch (error) {
             console.error(`${tag} ${symbol} ❌ Greška pri otvaranju SHORT:`, error.message);
+            // Self-diagnosing context: without this, a -4061 gives no clue
+            // whether mode detection ran or what params were actually sent.
+            console.error(`${tag} ${symbol}    mode=${positionModeName()} params=${JSON.stringify(params)}`);
+            if (String(error.message).includes('-4061')) {
+                console.error(`${tag} ${symbol}    -4061 = positionSide mismatch.`);
+                console.error(`${tag} ${symbol}    ${isHedgeMode() ? 'Hedge detected but Binance disagrees — check API key permissions.' : 'One-way assumed but account is likely Hedge — run: npm run diagnose'}`);
+            }
         }
     }
 
