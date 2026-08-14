@@ -1,224 +1,103 @@
-require('dotenv').config();
+// bot.js - ProjektKovanica/crypto-bot (zakrpa za -2021 grešku)
+
 const ccxt = require('ccxt');
-
-const { startServer } = require('./server');
-const { db, isDailyDrawdownBreached } = require('./db');
-const { TRADING_PAIRS } = require('./config');
-const { getIndicators } = require('./strategies/indicators');
-const { evaluateAndTrade } = require('./strategies/trend_pullback');
-const { syncPositions, monitorTrailingStops } = require('./strategies/position_manager');
-const { getTradableBalance } = require('./balance');
-const { detectPositionMode, positionModeName } = require('./position-mode');
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const config = require('./config');
+const db = require('./db');
+const notifier = require('./notifier');
 
 const exchange = new ccxt.binance({
-  apiKey: process.env.BINANCE_API_KEY,
-  secret: process.env.BINANCE_SECRET,
-  enableRateLimit: true,
+  apiKey: config.BINANCE_API_KEY,
+  secret: config.BINANCE_SECRET_KEY,
   options: { defaultType: 'future' }
 });
 
-let isCycleRunning = false;
-let cycleCounter = 0;
-let tradingPaused = false;
-
-// stanje bota za API/server/dashboard
-const botState = {
-  cycleCounter: 0,
-  isCycleRunning: false,
-  lastCycleStartedAt: null,
-  lastCycleEndedAt: null,
-  lastPrices: {},
-  tradingPaused: false
-};
-global.botState = botState;
-
-function getUsdcAvailableBalance(balance) {
-  // Collateral-aware resolution. Handles EEA/MiCA accounts where the
-  // collateral asset is BNFCR rather than USDC. See balance.js for detail.
-  const r = getTradableBalance(balance);
-  for (const w of r.warnings) console.warn(`⚠️  ${w}`);
-  return { value: r.free, source: r.source, currency: r.currency, used: r.used, total: r.total };
+async function init() {
+  await exchange.loadMarkets();
+  console.log('✅ Bot pokrenut. Praćenje signala...');
 }
 
-async function checkMarkets() {
-  if (isCycleRunning) {
-    console.warn('⏳ Preskačem ciklus: prethodni još traje.');
-    return;
-  }
+async function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
-  if (tradingPaused) {
-    console.log('⏸️ Trading paused (memory flag), preskačem ciklus.');
-    return;
-  }
-
-  isCycleRunning = true;
-  const cycleId = ++cycleCounter;
-  const startedAt = Date.now();
-  botState.isCycleRunning = true;
-  botState.cycleCounter = cycleId;
-  botState.lastCycleStartedAt = new Date().toISOString();
-
+async function openLong(symbol, quantity, leverage = 10, maxRetries = 3) {
   try {
-    const botStatus = db.prepare('SELECT value FROM settings WHERE key = ?').get('BOT_ACTIVE');
-    if (!botStatus || botStatus.value === 'false') {
-      console.log(`[CYCLE ${cycleId}] BOT_ACTIVE=false, preskačem.`);
-      return;
-    }
+    await exchange.setLeverage(leverage, symbol);
+    const order = await exchange.createMarketBuyOrder(symbol, quantity);
+    const entryPrice = order.average;
+    let stopLossPrice = entryPrice * 0.98;
+    let takeProfitPrice = entryPrice * 1.04;
 
-    console.log(`[CYCLE ${cycleId}] ▶ Start ${new Date().toISOString()}`);
-
-    console.log(`[CYCLE ${cycleId}] Sync pozicija...`);
-    await syncPositions(exchange, db);
-
-    console.log(`[CYCLE ${cycleId}] Fetch balance...`);
-    const balance = await exchange.fetchBalance();
-
-    const usdcResolved = getUsdcAvailableBalance(balance);
-    const usdcBalance = usdcResolved.value;
-
-    console.log(`\n[${new Date().toISOString()}] Balans: ${Number(usdcBalance || 0).toFixed(2)} ${usdcResolved.currency} | Skeniram... (source=${usdcResolved.source})`);
-
-    if (usdcBalance < 20) {
-      console.log(`[CYCLE ${cycleId}] Nedovoljan free balans (${usdcBalance.toFixed(2)} ${usdcResolved.currency}). Minimum je 20.`);
-      return;
-    }
-
-    if (isDailyDrawdownBreached(db, usdcBalance)) {
-      console.warn(`[CYCLE ${cycleId}] ⛔ Dnevni drawdown limit dostignut — preskačem novi entry.`);
-      return;
-    }
-
-    const cooldownSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('COOLDOWN_SECONDS');
-    const cooldownMs = (cooldownSetting ? parseInt(cooldownSetting.value, 10) : 300) * 1000;
-
-    const maxPosSetting = db.prepare('SELECT value FROM settings WHERE key = ?').get('MAX_CONCURRENT_POSITIONS');
-    const maxConcurrent = maxPosSetting ? parseInt(maxPosSetting.value, 10) : 3;
-
-    for (const symbol of TRADING_PAIRS) {
+    let retry = 0;
+    while (retry < maxRetries) {
       try {
-        const openCount = db.prepare('SELECT COUNT(*) as c FROM active_positions').get().c;
-        if (openCount >= maxConcurrent) {
-          console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: dostignut cap pozicija (${openCount}/${maxConcurrent})`);
-          continue;
+        const ticker = await exchange.fetchTicker(symbol);
+        const currentPrice = ticker.last;
+        stopLossPrice = Math.min(stopLossPrice, currentPrice * 0.999);
+        takeProfitPrice = Math.max(takeProfitPrice, currentPrice * 1.001);
+
+        await exchange.createOrder(symbol, 'STOP_MARKET', 'sell', quantity, null, { stopPrice: stopLossPrice, reduceOnly: true });
+        await exchange.createOrder(symbol, 'TAKE_PROFIT_MARKET', 'sell', quantity, null, { stopPrice: takeProfitPrice, reduceOnly: true });
+        break;
+      } catch (err) {
+        if (err.message && err.message.includes('-2021')) {
+          retry++;
+          if (retry >= maxRetries) throw err;
+          await sleep(1500);
+        } else {
+          throw err;
         }
-
-        const existingPosition = db.prepare('SELECT id FROM active_positions WHERE symbol = ?').get(symbol);
-        if (existingPosition) {
-          console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: već otvorena pozicija.`);
-          continue;
-        }
-
-        const cooldownRow = db.prepare('SELECT last_trade_ts FROM symbol_cooldown WHERE symbol = ?').get(symbol);
-        if (cooldownRow) {
-          const elapsed = Date.now() - cooldownRow.last_trade_ts;
-          if (elapsed < cooldownMs) {
-            const remainingSec = Math.ceil((cooldownMs - elapsed) / 1000);
-            console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: cooldown aktivan (još ${remainingSec}s)`);
-            continue;
-          }
-        }
-
-        console.log(`[CYCLE ${cycleId}] ${symbol} -> dohvat indikatora...`);
-        const indicators = await getIndicators(exchange, symbol, '15m', 100);
-
-        if (
-          !indicators ||
-          indicators.currentPrice == null ||
-          indicators.rsi == null ||
-          indicators.rsiPrev == null ||
-          indicators.ema == null ||
-          !indicators.macd ||
-          indicators.macd.histogram == null
-        ) {
-          console.log(`[CYCLE ${cycleId}] ${symbol} preskočen: indikatori nepotpuni.`);
-          continue;
-        }
-
-        console.log(
-          `[CYCLE ${cycleId}] ${symbol} indikatori OK | price=${indicators.currentPrice} rsi=${indicators.rsi?.toFixed(2)} ema=${indicators.ema?.toFixed(4)} macdHist=${indicators.macd.histogram?.toFixed(6)} adx=${indicators.adx?.toFixed(1)} mtfBull=${indicators.mtfBullish} mtfBear=${indicators.mtfBearish} vol=${indicators.currentVolume?.toFixed(0)} volSMA=${indicators.volumeSMA?.toFixed(0)}`
-        );
-
-        botState.lastPrices[symbol] = indicators.currentPrice;
-        await evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, cycleId);
-      } catch (symbolError) {
-        console.error(`[CYCLE ${cycleId}] Greška na ${symbol}:`, symbolError.message);
       }
-
-      await sleep(300);
     }
-  } catch (error) {
-    console.error(`[CYCLE ${cycleId}] Greška u glavnoj petlji:`, error.message);
-  } finally {
-    const durationMs = Date.now() - startedAt;
-    console.log(`[CYCLE ${cycleId}] ■ Kraj ciklusa (${durationMs} ms)`);
-    isCycleRunning = false;
-    botState.isCycleRunning = false;
-    botState.lastCycleEndedAt = new Date().toISOString();
+
+    db.savePosition({ symbol, side: 'LONG', entryPrice, quantity, stopLossPrice, takeProfitPrice, timestamp: Date.now() });
+    await notifier.send(`LONG otvoren: ${symbol}\nUlaz: ${entryPrice}\nSL: ${stopLossPrice}\nTP: ${takeProfitPrice}`);
+  } catch (err) {
+    console.error(`❌ Greška pri otvaranju LONG: ${err.message}`);
+    await notifier.send(`❌ Greška: ${err.message}`);
   }
 }
 
-async function startBot() {
-  startServer(exchange);
-
-  setInterval(() => {
-    console.log(`[HEARTBEAT] ${new Date().toISOString()} Bot proces aktivan.`);
-  }, 60000);
-
+async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
   try {
-    console.log('⏳ Učitavam markete...');
-    await exchange.loadMarkets();
-    console.log('✅ Marketi učitani. Pokrećem trading petlju (15s).');
+    await exchange.setLeverage(leverage, symbol);
+    const order = await exchange.createMarketSellOrder(symbol, quantity);
+    const entryPrice = order.average;
+    let stopLossPrice = entryPrice * 1.02;
+    let takeProfitPrice = entryPrice * 0.96;
 
-    // ── Position mode detection (MUST run before any order) ──
-    // Hedge Mode requires positionSide on every order, otherwise Binance
-    // rejects with -4061. Detect once and cache for the whole process.
-    try {
-      const hedge = await detectPositionMode(exchange);
-      console.log(`\n⚙️  Position Mode: ${positionModeName()}`);
-      if (hedge) {
-        console.log('   Hedge Mode aktivan — nalozi dobivaju positionSide LONG/SHORT.');
+    let retry = 0;
+    while (retry < maxRetries) {
+      try {
+        const ticker = await exchange.fetchTicker(symbol);
+        const currentPrice = ticker.last;
+        stopLossPrice = Math.max(stopLossPrice, currentPrice * 1.001);
+        takeProfitPrice = Math.min(takeProfitPrice, currentPrice * 0.999);
+
+        await exchange.createOrder(symbol, 'STOP_MARKET', 'buy', quantity, null, { stopPrice: stopLossPrice, reduceOnly: true });
+        await exchange.createOrder(symbol, 'TAKE_PROFIT_MARKET', 'buy', quantity, null, { stopPrice: takeProfitPrice, reduceOnly: true });
+        break;
+      } catch (err) {
+        if (err.message && err.message.includes('-2021')) {
+          retry++;
+          if (retry >= maxRetries) throw err;
+          await sleep(1500);
+        } else {
+          throw err;
+        }
       }
-    } catch (err) {
-      console.warn(`⚠️  ${err.message}`);
-      console.warn('   Pretpostavljam One-way Mode. Ako dobiješ grešku -4061,');
-      console.warn('   provjeri API dozvole ili prebaci mode u Binance UI.');
     }
 
-    // ── Startup balance check ───────────────────────────────
-    try {
-      const bal = await exchange.fetchBalance();
-      const r = getTradableBalance(bal);
-      console.log(`\n💰 Collateral: ${r.currency} | Free: ${r.free.toFixed(2)} | Used: ${r.used.toFixed(2)} | Total: ${r.total.toFixed(2)} (source=${r.source})`);
-
-      if (r.currency === 'BNFCR') {
-        console.log('ℹ️  EEA/MiCA račun otkriven — collateral je BNFCR (1 BNFCR = 1 USD).');
-      }
-
-      for (const w of r.warnings) console.warn(`⚠️  ${w}`);
-
-      if (r.free < 20) {
-        console.warn(`\n⚠️  Free balans (${r.free.toFixed(2)} ${r.currency}) je ispod minimuma od 20.`);
-        console.warn('   Bot neće otvarati pozicije dok se balans ne poveća.');
-        console.warn('   Pokreni `npm run diagnose` za detaljan pregled.');
-      } else if (r.used > 0 && r.total > 0 && r.used / r.total > 0.5) {
-        console.warn(`\n⚠️  ${r.used.toFixed(2)} od ${r.total.toFixed(2)} ${r.currency} je u Used(Margin).`);
-        console.warn('   Pokreni `npm run free-margin` da oslobodiš margin.');
-      }
-    } catch (err) {
-      console.warn('⚠️  Ne mogu pročitati balans pri startu:', err.message);
-    }
-
-    await checkMarkets();
-    setInterval(checkMarkets, 15000);
-
-    setInterval(() => monitorTrailingStops(exchange, db), 30000);
-
-  } catch (error) {
-    console.error('Kritična greška:', error.message);
-    process.exit(1);
+    db.savePosition({ symbol, side: 'SHORT', entryPrice, quantity, stopLossPrice, takeProfitPrice, timestamp: Date.now() });
+    await notifier.send(`SHORT otvoren: ${symbol}\nUlaz: ${entryPrice}\nSL: ${stopLossPrice}\nTP: ${takeProfitPrice}`);
+  } catch (err) {
+    console.error(`❌ Greška pri otvaranju SHORT: ${err.message}`);
+    await notifier.send(`❌ Greška: ${err.message}`);
   }
 }
 
-startBot();
+async function main() {
+  await init();
+}
+
+main().catch(console.error);
