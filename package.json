@@ -8,7 +8,9 @@
     "dev": "nodemon bot.js",
     "server": "node server.js",
     "free-margin": "node free-margin.js",
-    "free-margin:dry": "node free-margin.js --dry-run"
+    "free-margin:dry": "node free-margin.js --dry-run",
+    "diagnose": "node diagnose-balance.js",
+    "enable-multi-assets": "node diagnose-balance.js --enable-multi-assets"
   },
   "keywords": [
     "crypto",

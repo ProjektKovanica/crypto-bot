@@ -37,7 +37,11 @@ const exchange = new ccxt.binance({
   apiKey: process.env.BINANCE_API_KEY,
   secret: process.env.BINANCE_SECRET,
   enableRateLimit: true,
-  options: { defaultType: 'future' },
+  options: {
+    defaultType: 'future',
+    // Acknowledge the stricter rate limit so fetchOpenOrders() works without a symbol
+    fetchOpenOrders: { warnWithoutSymbol: false },
+  },
 });
 
 function getUsdcBalance(balance) {
@@ -88,50 +92,50 @@ async function main() {
   if (DO_ORDERS) {
     console.log('\n━━━ CANCELLING OPEN ORDERS ━━━');
     let totalCancelled = 0;
+    let orders = [];
+    let fetchedAll = false;
 
-    for (const symbol of TRADING_PAIRS) {
-      try {
-        const orders = await exchange.fetchOpenOrders(symbol);
-        if (orders.length === 0) continue;
-
-        console.log(`  ${symbol}: ${orders.length} open order(s) found`);
-        for (const order of orders) {
-          if (DRY_RUN) {
-            console.log(`    [DRY-RUN] Would cancel ${order.side} ${order.type} ${order.amount} @ ${order.price || 'market'} (id=${order.id})`);
-          } else {
-            await exchange.cancelOrder(order.id, symbol);
-            console.log(`    ✅ Cancelled order ${order.id}`);
-            totalCancelled++;
-          }
-        }
-      } catch (err) {
-        console.error(`  ❌ ${symbol}: ${err.message}`);
-      }
+    // Preferred: fetch open orders across EVERY symbol in one call.
+    // The warnWithoutSymbol option above makes this work.
+    try {
+      orders = await exchange.fetchOpenOrders();
+      fetchedAll = true;
+      console.log(`  Fetched ${orders.length} open order(s) across all symbols.`);
+    } catch (err) {
+      console.log(`  Could not fetch all orders at once (${err.message})`);
+      console.log(`  Falling back to per-pair scan of TRADING_PAIRS...`);
     }
 
-    // Also try cancelling all orders at once (catches orders on pairs not in TRADING_PAIRS)
-    try {
-      const allOrders = await exchange.fetchOpenOrders();
-      const extra = allOrders.filter(o => !TRADING_PAIRS.includes(o.symbol));
-      if (extra.length > 0) {
-        console.log(`\n  Found ${extra.length} additional open order(s) on other pairs.`);
-        for (const order of extra) {
-          if (DRY_RUN) {
-            console.log(`    [DRY-RUN] Would cancel ${order.symbol} order ${order.id}`);
-          } else {
-            try {
-              await exchange.cancelOrder(order.id, order.symbol);
-              console.log(`    ✅ Cancelled ${order.symbol} order ${order.id}`);
-              totalCancelled++;
-            } catch (err) {
-              console.error(`    ❌ ${order.symbol} order ${order.id}: ${err.message}`);
-            }
-          }
+    // Fallback: scan the configured pairs individually
+    if (!fetchedAll) {
+      for (const symbol of TRADING_PAIRS) {
+        try {
+          const o = await exchange.fetchOpenOrders(symbol);
+          orders.push(...o);
+        } catch (err) {
+          console.error(`  ❌ ${symbol}: ${err.message}`);
         }
       }
-    } catch (err) {
-      // Some exchanges don't support fetchOpenOrders without symbol
-      console.log(`  (Could not fetch all orders: ${err.message})`);
+      console.log(`  Fetched ${orders.length} open order(s) from ${TRADING_PAIRS.length} configured pairs.`);
+    }
+
+    if (orders.length === 0) {
+      console.log('  No open orders found.');
+    }
+
+    for (const order of orders) {
+      const label = `${order.symbol} ${order.side} ${order.type} ${order.amount} @ ${order.price ?? 'market'} (id=${order.id})`;
+      if (DRY_RUN) {
+        console.log(`    [DRY-RUN] Would cancel ${label}`);
+      } else {
+        try {
+          await exchange.cancelOrder(order.id, order.symbol);
+          console.log(`    ✅ Cancelled ${label}`);
+          totalCancelled++;
+        } catch (err) {
+          console.error(`    ❌ Failed to cancel ${label}: ${err.message}`);
+        }
+      }
     }
 
     console.log(`\n  Total orders ${DRY_RUN ? 'would be ' : ''}cancelled: ${totalCancelled}`);
@@ -190,10 +194,13 @@ async function main() {
     console.log(`\n💰 Freed: $${freed.toFixed(2)} moved from Used(Margin) → Free`);
 
     if (after.used > 0.01) {
-      console.log(`\n⚠️  Still $${after.used.toFixed(2)} in used margin. This could be from:`);
-      console.log('   - Pending liquidation or funding fees');
-      console.log('   - Positions that haven\'t fully settled yet');
-      console.log('   - Cross-margin requirements on other assets');
+      console.log(`\n⚠️  Still $${after.used.toFixed(2)} in used margin.`);
+      console.log(`\n   Run the diagnostic to see exactly which bucket holds it:`);
+      console.log(`     node diagnose-balance.js`);
+      console.log(`\n   Common causes when no positions/orders exist:`);
+      console.log(`     - Single-Asset Mode: USDC is not the active collateral asset`);
+      console.log(`     - Funds are in the Spot wallet, not the Futures wallet`);
+      console.log(`     - Isolated-margin position on an unlisted symbol`);
     }
   } else {
     console.log('\n🔍 Dry run complete. Run without --dry-run to execute.');
