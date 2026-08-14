@@ -81,7 +81,7 @@ function getTradableBalance(balance) {
       used,
       total: acctTotal,
       currency,
-      source: 'info.availableBalance (account-level)',
+      source: 'account.availableBalance',
       warnings,
     };
   }

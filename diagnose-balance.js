@@ -44,12 +44,80 @@ const n = (v) => {
 };
 const fmt = (v) => `$${n(v).toFixed(4)}`;
 
+const SUMMARY_ONLY = process.argv.includes('--summary');
+
+/**
+ * Compact, self-contained verdict. Printed LAST (and alone with --summary)
+ * so it is always visible in the terminal without scrolling back.
+ */
+function printSummary(balance) {
+  const resolved = getTradableBalance(balance);
+
+  // Build the box programmatically so the borders always line up.
+  const LABEL_W = 17;
+  const VALUE_W = 26;
+  const INNER = 1 + LABEL_W + 3 + VALUE_W + 1;
+  const row = (label, value) =>
+    `│ ${String(label).padEnd(LABEL_W)} : ${String(value).slice(0, VALUE_W).padEnd(VALUE_W)} │`;
+
+  const title = ' BOT BALANCE VERDICT ';
+  console.log(`\n┌─${title}${'─'.repeat(Math.max(0, INNER - title.length - 1))}┐`);
+  console.log(row('Collateral asset', resolved.currency));
+  console.log(row('Free (tradable)', resolved.free.toFixed(4)));
+  console.log(row('Used (margin)', resolved.used.toFixed(4)));
+  console.log(row('Total', resolved.total.toFixed(4)));
+  console.log(row('Resolved via', resolved.source));
+  console.log(`└${'─'.repeat(INNER)}┘`);
+
+  for (const w of resolved.warnings) console.log(`  ⚠️  ${w}`);
+
+  if (resolved.currency === 'BNFCR') {
+    console.log('\n  ℹ️  EEA/MiCA account: collateral is BNFCR (1 BNFCR = 1 USD).');
+    console.log('     BNFCR margins USDC/USDT pairs, so BTC/USDC etc. work fine.');
+  }
+
+  if (resolved.free >= 20) {
+    console.log(`\n  ✅ VERDICT: ${resolved.free.toFixed(2)} ${resolved.currency} tradable — above the bot's minimum of 20.`);
+    console.log('     Balance detection is working. Start the bot with:');
+    console.log('       pm2 restart crypto-bot && pm2 logs crypto-bot');
+  } else if (resolved.free > 0) {
+    console.log(`\n  ⚠️  VERDICT: ${resolved.free.toFixed(2)} ${resolved.currency} tradable — BELOW the bot's minimum of 20.`);
+    console.log('     The bot will skip every cycle until this rises above 20.');
+  } else {
+    console.log('\n  ❌ VERDICT: no tradable collateral detected.');
+    console.log('     On an EEA/MiCA account, swap BTC/ETH/BNB/USDC to BNFCR');
+    console.log('     inside your Binance Futures wallet.');
+  }
+
+  // Position-sizing reality check against the bot's $10 minimum notional
+  if (resolved.free >= 20) {
+    const riskPct = 2.0;
+    const riskAmt = resolved.free * (riskPct / 100);
+    const notional = riskAmt / 0.02; // assumes a ~2% ATR-based stop distance
+    console.log(`\n  📐 Sizing check at RISK_PERCENT=${riskPct}%:`);
+    console.log(`     Risk per trade ≈ ${riskAmt.toFixed(2)} ${resolved.currency}`);
+    console.log(`     With a ~2% ATR stop, notional ≈ ${notional.toFixed(2)} ${resolved.currency}`);
+    if (notional < 10) {
+      console.log("     ⚠️  Below the bot's $10 minimum notional — most signals will be skipped.");
+      console.log('     Consider raising RISK_PERCENT (e.g. to 5.0) or adding funds.');
+    } else {
+      console.log("     ✅ Above the bot's $10 minimum notional.");
+    }
+  }
+}
+
 async function main() {
   console.log('⏳ Loading markets...');
   await exchange.loadMarkets();
 
   const balance = await exchange.fetchBalance();
   const info = balance?.info || {};
+
+  // With --summary, print only the verdict and stop.
+  if (SUMMARY_ONLY) {
+    printSummary(balance);
+    return;
+  }
 
   // ── 1. Account-level totals ────────────────────────────────────────────
   console.log('\n═══ ACCOUNT-LEVEL TOTALS ═══');
@@ -205,36 +273,14 @@ async function main() {
     console.log(`  Could not read spot wallet: ${err.message}`);
   }
 
-  console.log('\n═══ WHAT THE BOT WILL USE ═══');
-  const resolved = getTradableBalance(balance);
-  console.log(`  Collateral asset : ${resolved.currency}`);
-  console.log(`  Free (tradable)  : ${resolved.free.toFixed(4)}`);
-  console.log(`  Used (margin)    : ${resolved.used.toFixed(4)}`);
-  console.log(`  Total            : ${resolved.total.toFixed(4)}`);
-  console.log(`  Resolved via     : ${resolved.source}`);
-  for (const w of resolved.warnings) console.log(`  ⚠️  ${w}`);
-
-  if (resolved.currency === 'BNFCR') {
-    console.log('\n  ℹ️  EEA/MiCA account detected.');
-    console.log('     Your collateral is BNFCR (Binance Futures Credits), 1 BNFCR = 1 USD.');
-    console.log('     Under MiCA, EEA users cannot use USDT/USDC directly as futures');
-    console.log('     collateral. BNFCR still margins USDC/USDT-denominated pairs,');
-    console.log('     so your BTC/USDC etc. pairs work normally.');
-    console.log('     This mode requires Cross Margin + Multi-Assets Mode (both expected).');
-  }
-
-  if (resolved.free >= 20) {
-    console.log(`\n  ✅ ${resolved.free.toFixed(2)} ${resolved.currency} available — above the bot's minimum of 20.`);
-  } else {
-    console.log(`\n  ⚠️  ${resolved.free.toFixed(2)} ${resolved.currency} available — BELOW the bot's minimum of 20.`);
-    console.log('     The bot will skip every cycle until this rises above 20.');
-  }
-
   console.log('\n═══ NEXT STEPS ═══');
   console.log('  1. Look at the LOCKED breakdown above to see which bucket holds your funds.');
-  console.log('  2. If openOrderInitialMargin > 0 → run: node free-margin.js');
-  console.log('  3. If Single-Asset Mode is the cause → run: node diagnose-balance.js --enable-multi-assets');
+  console.log('  2. If openOrderInitialMargin > 0 → run: npm run free-margin');
+  console.log('  3. If Single-Asset Mode is the cause → run: npm run enable-multi-assets');
   console.log('  4. If funds are in the SPOT wallet → transfer them to Futures in the Binance UI.');
+
+  // Printed LAST so it survives terminal scrollback.
+  printSummary(balance);
 }
 
 // ── Optional: enable Multi-Assets Mode ───────────────────────────────────
