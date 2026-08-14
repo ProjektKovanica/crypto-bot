@@ -171,6 +171,8 @@ async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
 
 async function main() {
   await init();
+  // Test trade: LONG DOGE/USDC 100 DOGE @ 10x leverage (~$7 USDC)
+  await openLong('DOGEUSDC', 100, 10);
 }
 
 main().catch(console.error);
