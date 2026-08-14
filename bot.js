@@ -198,6 +198,28 @@ async function startBot() {
     setInterval(checkMarkets, 15000);
 
     setInterval(() => monitorTrailingStops(exchange, db), 30000);
+
+    // ── Startup margin check ────────────────────────────────
+    // Warn if most of the balance is locked in used margin.
+    try {
+      const bal = await exchange.fetchBalance();
+      const assets = bal?.info?.assets;
+      if (Array.isArray(assets)) {
+        const usdc = assets.find(a => String(a.asset).toUpperCase() === 'USDC')
+          || assets.find(a => String(a.asset).toUpperCase() === 'U');
+        if (usdc) {
+          const free = parseFloat(usdc.availableBalance) || 0;
+          const total = parseFloat(usdc.walletBalance) || 0;
+          const used = Math.max(0, total - free);
+          if (used > 0 && used / total > 0.5) {
+            console.warn(`⚠️  UPOZORENJE: $${used.toFixed(2)} od $${total.toFixed(2)} je u Used(Margin).`);
+            console.warn(`   Samo $${free.toFixed(2)} je Free.`);
+            console.warn(`   Pokreni \`npm run free-margin\` da oslobodiš margin (zatvara pozicije i naloge).`);
+            console.warn(`   Ili \`npm run free-margin:dry\` za pregled bez izvršavanja.`);
+          }
+        }
+      }
+    } catch (_) {}
   } catch (error) {
     console.error('Kritična greška:', error.message);
     process.exit(1);

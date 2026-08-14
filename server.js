@@ -682,6 +682,40 @@ app.post('/api/settings', settingsRateLimiter, (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/free-margin', async (req, res) => {
+  if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
+  try {
+    const results = { ordersCancelled: 0, positionsClosed: 0, errors: [] };
+
+    // Cancel all open orders
+    const { TRADING_PAIRS } = require('./config');
+    for (const symbol of TRADING_PAIRS) {
+      try {
+        const orders = await global.exchange.fetchOpenOrders(symbol);
+        for (const order of orders) {
+          await global.exchange.cancelOrder(order.id, symbol);
+          results.ordersCancelled++;
+        }
+      } catch (e) { results.errors.push(`${symbol} orders: ${e.message}`); }
+    }
+
+    // Close all open positions
+    const positions = await global.exchange.fetchPositions();
+    const open = positions.filter(p => Math.abs(parseFloat(p.contracts)) > 0);
+    for (const pos of open) {
+      try {
+        const closeSide = pos.side === 'long' ? 'sell' : 'buy';
+        await global.exchange.createMarketOrder(pos.symbol, closeSide, Math.abs(parseFloat(pos.contracts)), undefined, { reduceOnly: true });
+        results.positionsClosed++;
+      } catch (e) { results.errors.push(`${pos.symbol} close: ${e.message}`); }
+    }
+
+    res.json({ success: true, ...results });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ---------- Start ----------
 function startServer(exchange) {
   global.exchange = exchange;

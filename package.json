@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node bot.js",
     "dev": "nodemon bot.js",
-    "server": "node server.js"
+    "server": "node server.js",
+    "free-margin": "node free-margin.js",
+    "free-margin:dry": "node free-margin.js --dry-run"
   },
   "keywords": [
     "crypto",
