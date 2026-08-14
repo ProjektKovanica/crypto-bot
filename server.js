@@ -7,7 +7,7 @@ const { TRADING_PAIRS } = require('./config');
 const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 
 const app = express();
-const PORT = 4000;
+const PORT = parseInt(process.env.PORT, 10) || 4000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -719,7 +719,30 @@ app.post('/api/free-margin', async (req, res) => {
 // ---------- Start ----------
 function startServer(exchange) {
   global.exchange = exchange;
-  app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Dashboard online: http://localhost:${PORT}`));
+
+  const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Dashboard online: http://localhost:${PORT}`);
+  });
+
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`\n❌ Port ${PORT} je zauzet — vjerojatno bot već radi.\n`);
+      console.error('   Provjeri što koristi port:');
+      console.error(`     pm2 list`);
+      console.error(`     lsof -i :${PORT}`);
+      console.error('\n   Ako PM2 već vrti bota, koristi:');
+      console.error('     pm2 restart crypto-bot && pm2 logs crypto-bot');
+      console.error('\n   Za pokretanje u foregroundu prvo zaustavi PM2:');
+      console.error('     pm2 stop crypto-bot && npm start');
+      console.error(`\n   Ili pokreni na drugom portu:`);
+      console.error(`     PORT=4001 npm start\n`);
+      process.exit(1);
+    }
+    console.error('❌ Greška servera:', err.message);
+    process.exit(1);
+  });
+
+  return server;
 }
 
 module.exports = { startServer };
