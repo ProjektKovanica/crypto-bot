@@ -170,11 +170,6 @@ async function startBot() {
     await exchange.loadMarkets();
     console.log('✅ Marketi učitani. Pokrećem trading petlju (15s).');
 
-    await checkMarkets();
-    setInterval(checkMarkets, 15000);
-
-    setInterval(() => monitorTrailingStops(exchange, db), 30000);
-
     // ── Startup balance check ───────────────────────────────
     try {
       const bal = await exchange.fetchBalance();
@@ -198,6 +193,12 @@ async function startBot() {
     } catch (err) {
       console.warn('⚠️  Ne mogu pročitati balans pri startu:', err.message);
     }
+
+    await checkMarkets();
+    setInterval(checkMarkets, 15000);
+
+    setInterval(() => monitorTrailingStops(exchange, db), 30000);
+
   } catch (error) {
     console.error('Kritična greška:', error.message);
     process.exit(1);
