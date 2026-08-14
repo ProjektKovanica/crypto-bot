@@ -6,6 +6,7 @@ const { db } = require('./db');
 const { TRADING_PAIRS } = require('./config');
 const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
 const { getTradableBalance } = require('./balance');
+const { closeParams, closeOrderSide } = require('./position-mode');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 4000;
@@ -683,8 +684,8 @@ app.post('/api/free-margin', async (req, res) => {
     const open = positions.filter(p => Math.abs(parseFloat(p.contracts)) > 0);
     for (const pos of open) {
       try {
-        const closeSide = pos.side === 'long' ? 'sell' : 'buy';
-        await global.exchange.createMarketOrder(pos.symbol, closeSide, Math.abs(parseFloat(pos.contracts)), undefined, { reduceOnly: true });
+        const closeSide = closeOrderSide(pos.side);
+        await global.exchange.createMarketOrder(pos.symbol, closeSide, Math.abs(parseFloat(pos.contracts)), undefined, closeParams(pos.side));
         results.positionsClosed++;
       } catch (e) { results.errors.push(`${pos.symbol} close: ${e.message}`); }
     }

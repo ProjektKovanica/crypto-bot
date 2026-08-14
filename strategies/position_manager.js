@@ -1,5 +1,6 @@
 const { sendTelegramMessage } = require('../notifier');
 const { ATR } = require('technicalindicators');
+const { closeParams, closeOrderSide } = require('../position-mode');
 
 async function syncPositions(exchange, db) {
     try {
@@ -159,8 +160,10 @@ async function forceClosePosition(exchange, db, symbol) {
         const pos = db.prepare('SELECT * FROM active_positions WHERE symbol = ?').get(symbol);
         if (!pos) throw new Error(`Nema aktivne pozicije za ${symbol}`);
 
-        const closeSide = pos.side === 'buy' ? 'sell' : 'buy';
-        await exchange.createMarketOrder(symbol, closeSide, pos.size, undefined, { reduceOnly: true });
+        // pos.side is the ENTRY side ('buy'/'sell'); closeParams needs the
+        // position's own side so positionSide is correct in Hedge Mode.
+        const closeSide = closeOrderSide(pos.side);
+        await exchange.createMarketOrder(symbol, closeSide, pos.size, undefined, closeParams(pos.side));
 
         await syncPositions(exchange, db);
         return { success: true };

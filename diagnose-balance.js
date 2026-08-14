@@ -21,6 +21,7 @@
 require('dotenv').config();
 const ccxt = require('ccxt');
 const { getTradableBalance } = require('./balance');
+const { detectPositionMode, positionModeName } = require('./position-mode');
 
 if (!process.env.BINANCE_API_KEY || !process.env.BINANCE_SECRET) {
   console.error('❌ BINANCE_API_KEY and BINANCE_SECRET must be set in .env');
@@ -201,6 +202,20 @@ async function main() {
   }
 
   // ── 3. Multi-Assets Mode check ─────────────────────────────────────────
+  console.log('\n═══ POSITION MODE ═══');
+  try {
+    const hedge = await detectPositionMode(exchange);
+    console.log(`  ${positionModeName()} Mode`);
+    if (hedge) {
+      console.log('  → Every order MUST carry positionSide=LONG|SHORT.');
+      console.log('  → reduceOnly is NOT allowed; closes use positionSide.');
+    } else {
+      console.log('  → Orders must NOT carry positionSide; closes use reduceOnly.');
+    }
+  } catch (err) {
+    console.log(`  ❌ ${err.message}`);
+  }
+
   console.log('\n═══ MARGIN MODE ═══');
   try {
     const modeRes = await exchange.fapiPrivateGetMultiAssetsMargin();

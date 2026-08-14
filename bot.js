@@ -8,6 +8,7 @@ const { getIndicators } = require('./strategies/indicators');
 const { evaluateAndTrade } = require('./strategies/trend_pullback');
 const { syncPositions, monitorTrailingStops } = require('./strategies/position_manager');
 const { getTradableBalance } = require('./balance');
+const { detectPositionMode, positionModeName } = require('./position-mode');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -169,6 +170,21 @@ async function startBot() {
     console.log('⏳ Učitavam markete...');
     await exchange.loadMarkets();
     console.log('✅ Marketi učitani. Pokrećem trading petlju (15s).');
+
+    // ── Position mode detection (MUST run before any order) ──
+    // Hedge Mode requires positionSide on every order, otherwise Binance
+    // rejects with -4061. Detect once and cache for the whole process.
+    try {
+      const hedge = await detectPositionMode(exchange);
+      console.log(`\n⚙️  Position Mode: ${positionModeName()}`);
+      if (hedge) {
+        console.log('   Hedge Mode aktivan — nalozi dobivaju positionSide LONG/SHORT.');
+      }
+    } catch (err) {
+      console.warn(`⚠️  ${err.message}`);
+      console.warn('   Pretpostavljam One-way Mode. Ako dobiješ grešku -4061,');
+      console.warn('   provjeri API dozvole ili prebaci mode u Binance UI.');
+    }
 
     // ── Startup balance check ───────────────────────────────
     try {

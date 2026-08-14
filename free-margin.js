@@ -21,6 +21,7 @@ const ccxt = require('ccxt');
 
 const { TRADING_PAIRS } = require('./config');
 const { getTradableBalance } = require('./balance');
+const { detectPositionMode, positionModeName, closeParams, closeOrderSide } = require('./position-mode');
 
 const args = new Set(process.argv.slice(2));
 const DRY_RUN = args.has('--dry-run');
@@ -53,6 +54,15 @@ function getUsdcBalance(balance) {
 async function main() {
   console.log('⏳ Loading markets...');
   await exchange.loadMarkets();
+
+  // Hedge Mode changes how positions must be closed (positionSide instead
+  // of reduceOnly), so detect it before sending any close order.
+  try {
+    await detectPositionMode(exchange);
+    console.log(`⚙️  Position Mode: ${positionModeName()}`);
+  } catch (err) {
+    console.warn(`⚠️  ${err.message} — assuming One-way Mode.`);
+  }
 
   // ── Balance BEFORE ──────────────────────────────────────────
   const balanceBefore = await exchange.fetchBalance();
@@ -142,7 +152,7 @@ async function main() {
     for (const pos of openPositions) {
       const contracts = parseFloat(pos.contracts);
       const side = pos.side; // 'long' or 'short'
-      const closeSide = side === 'long' ? 'sell' : 'buy';
+      const closeSide = closeOrderSide(side);
 
       console.log(`  ${pos.symbol}: ${side} ${Math.abs(contracts)} contracts (entry=${pos.entryPrice})`);
 
@@ -150,9 +160,7 @@ async function main() {
         console.log(`    [DRY-RUN] Would close with ${closeSide} market order (reduceOnly)`);
       } else {
         try {
-          await exchange.createMarketOrder(pos.symbol, closeSide, Math.abs(contracts), undefined, {
-            reduceOnly: true,
-          });
+          await exchange.createMarketOrder(pos.symbol, closeSide, Math.abs(contracts), undefined, closeParams(side));
           console.log(`    ✅ Position closed`);
           totalClosed++;
         } catch (err) {

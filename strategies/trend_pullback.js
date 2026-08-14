@@ -1,4 +1,5 @@
 const { sendTelegramMessage, tradeKeyboard } = require('../notifier');
+const { entryParams } = require('../position-mode');
 
 // ── Kelly Criterion (half-Kelly) ────────────────────────────────────────────
 // Vraća udio portfelja za uložiti na temelju prošlih trejdova za dani simbol.
@@ -191,7 +192,7 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
                 console.warn(`⚠️  Leverage greška za ${symbol}:`, levErr.message);
             }
 
-            const params = { stopLossPrice: formattedSL, takeProfitPrice: formattedTP };
+            const params = entryParams('buy', { stopLossPrice: formattedSL, takeProfitPrice: formattedTP });
             await exchange.createMarketOrder(symbol, 'buy', positionSize, undefined, params);
 
             db.prepare(`INSERT INTO active_positions (symbol, entry_price, size, side, stop_loss, take_profit) VALUES (?, ?, ?, ?, ?, ?)`)
@@ -243,7 +244,7 @@ async function evaluateAndTrade(exchange, db, symbol, indicators, usdcBalance, c
                 console.warn(`⚠️  Leverage greška za ${symbol}:`, levErr.message);
             }
 
-            const params = { stopLossPrice: formattedSL, takeProfitPrice: formattedTP };
+            const params = entryParams('sell', { stopLossPrice: formattedSL, takeProfitPrice: formattedTP });
             await exchange.createMarketOrder(symbol, 'sell', positionSize, undefined, params);
 
             db.prepare(`INSERT INTO active_positions (symbol, entry_price, size, side, stop_loss, take_profit) VALUES (?, ?, ?, ?, ?, ?)`)
