@@ -1,4 +1,4 @@
-// bot.js - ProjektKovanica/crypto-bot (zakrpa za -2021 grešku)
+// bot.js - ProjektKovanica/crypto-bot (Hedge mode + USDC/BNFCR/RWUSD support)
 
 const ccxt = require('ccxt');
 const config = require('./config');
@@ -20,10 +20,30 @@ async function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Dohvati ispravan CCXT format simbola (npr. 'DOGE/USDC:USDC')
+function normalizeSymbol(symbol) {
+  if (symbol.includes('/')) return symbol;
+  
+  const match = symbol.match(/^([A-Z]+)(USDC|USDT|FDUSD|BNFCR|RWUSD)$/);
+  if (match) {
+    const [_, base, quote] = match;
+    return `${base}/${quote}:${quote}`;
+  }
+  
+  return symbol.includes(':') ? symbol : `${symbol}:USDC`;
+}
+
 async function openLong(symbol, quantity, leverage = 10, maxRetries = 3) {
   try {
-    await exchange.setLeverage(leverage, symbol);
-    const order = await exchange.createMarketBuyOrder(symbol, quantity);
+    const normalizedSymbol = normalizeSymbol(symbol);
+    
+    await exchange.setLeverage(leverage, normalizedSymbol);
+
+    const order = await exchange.createMarketBuyOrder(normalizedSymbol, quantity, null, {
+      positionSide: 'LONG'
+    });
+    console.log(`✅ LONG otvoren: ${normalizedSymbol} ${quantity} @ ${order.average}`);
+
     const entryPrice = order.average;
     let stopLossPrice = entryPrice * 0.98;
     let takeProfitPrice = entryPrice * 1.04;
@@ -31,14 +51,27 @@ async function openLong(symbol, quantity, leverage = 10, maxRetries = 3) {
     let retry = 0;
     while (retry < maxRetries) {
       try {
-        const ticker = await exchange.fetchTicker(symbol);
+        const ticker = await exchange.fetchTicker(normalizedSymbol);
         const currentPrice = ticker.last;
+
         stopLossPrice = Math.min(stopLossPrice, currentPrice * 0.999);
         takeProfitPrice = Math.max(takeProfitPrice, currentPrice * 1.001);
 
-        await exchange.createOrder(symbol, 'STOP_MARKET', 'sell', quantity, null, { stopPrice: stopLossPrice, reduceOnly: true });
-        await exchange.createOrder(symbol, 'TAKE_PROFIT_MARKET', 'sell', quantity, null, { stopPrice: takeProfitPrice, reduceOnly: true });
+        await exchange.createOrder(normalizedSymbol, 'STOP_MARKET', 'sell', quantity, null, {
+          stopPrice: stopLossPrice,
+          reduceOnly: true,
+          positionSide: 'LONG'
+        });
+
+        await exchange.createOrder(normalizedSymbol, 'TAKE_PROFIT_MARKET', 'sell', quantity, null, {
+          stopPrice: takeProfitPrice,
+          reduceOnly: true,
+          positionSide: 'LONG'
+        });
+
+        console.log(`🛡️ SL: ${stopLossPrice} | 🎯 TP: ${takeProfitPrice}`);
         break;
+
       } catch (err) {
         if (err.message && err.message.includes('-2021')) {
           retry++;
@@ -50,8 +83,18 @@ async function openLong(symbol, quantity, leverage = 10, maxRetries = 3) {
       }
     }
 
-    db.savePosition({ symbol, side: 'LONG', entryPrice, quantity, stopLossPrice, takeProfitPrice, timestamp: Date.now() });
-    await notifier.send(`LONG otvoren: ${symbol}\nUlaz: ${entryPrice}\nSL: ${stopLossPrice}\nTP: ${takeProfitPrice}`);
+    db.savePosition({ 
+      symbol: normalizedSymbol, 
+      side: 'LONG', 
+      entryPrice, 
+      quantity, 
+      stopLossPrice, 
+      takeProfitPrice, 
+      timestamp: Date.now() 
+    });
+
+    await notifier.send(`LONG otvoren: ${normalizedSymbol}\nUlaz: ${entryPrice}\nSL: ${stopLossPrice}\nTP: ${takeProfitPrice}`);
+
   } catch (err) {
     console.error(`❌ Greška pri otvaranju LONG: ${err.message}`);
     await notifier.send(`❌ Greška: ${err.message}`);
@@ -60,8 +103,15 @@ async function openLong(symbol, quantity, leverage = 10, maxRetries = 3) {
 
 async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
   try {
-    await exchange.setLeverage(leverage, symbol);
-    const order = await exchange.createMarketSellOrder(symbol, quantity);
+    const normalizedSymbol = normalizeSymbol(symbol);
+    
+    await exchange.setLeverage(leverage, normalizedSymbol);
+
+    const order = await exchange.createMarketSellOrder(normalizedSymbol, quantity, null, {
+      positionSide: 'SHORT'
+    });
+    console.log(`✅ SHORT otvoren: ${normalizedSymbol} ${quantity} @ ${order.average}`);
+
     const entryPrice = order.average;
     let stopLossPrice = entryPrice * 1.02;
     let takeProfitPrice = entryPrice * 0.96;
@@ -69,14 +119,27 @@ async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
     let retry = 0;
     while (retry < maxRetries) {
       try {
-        const ticker = await exchange.fetchTicker(symbol);
+        const ticker = await exchange.fetchTicker(normalizedSymbol);
         const currentPrice = ticker.last;
+
         stopLossPrice = Math.max(stopLossPrice, currentPrice * 1.001);
         takeProfitPrice = Math.min(takeProfitPrice, currentPrice * 0.999);
 
-        await exchange.createOrder(symbol, 'STOP_MARKET', 'buy', quantity, null, { stopPrice: stopLossPrice, reduceOnly: true });
-        await exchange.createOrder(symbol, 'TAKE_PROFIT_MARKET', 'buy', quantity, null, { stopPrice: takeProfitPrice, reduceOnly: true });
+        await exchange.createOrder(normalizedSymbol, 'STOP_MARKET', 'buy', quantity, null, {
+          stopPrice: stopLossPrice,
+          reduceOnly: true,
+          positionSide: 'SHORT'
+        });
+
+        await exchange.createOrder(normalizedSymbol, 'TAKE_PROFIT_MARKET', 'buy', quantity, null, {
+          stopPrice: takeProfitPrice,
+          reduceOnly: true,
+          positionSide: 'SHORT'
+        });
+
+        console.log(`🛡️ SL: ${stopLossPrice} | 🎯 TP: ${takeProfitPrice}`);
         break;
+
       } catch (err) {
         if (err.message && err.message.includes('-2021')) {
           retry++;
@@ -88,8 +151,18 @@ async function openShort(symbol, quantity, leverage = 10, maxRetries = 3) {
       }
     }
 
-    db.savePosition({ symbol, side: 'SHORT', entryPrice, quantity, stopLossPrice, takeProfitPrice, timestamp: Date.now() });
-    await notifier.send(`SHORT otvoren: ${symbol}\nUlaz: ${entryPrice}\nSL: ${stopLossPrice}\nTP: ${takeProfitPrice}`);
+    db.savePosition({ 
+      symbol: normalizedSymbol, 
+      side: 'SHORT', 
+      entryPrice, 
+      quantity, 
+      stopLossPrice, 
+      takeProfitPrice, 
+      timestamp: Date.now() 
+    });
+
+    await notifier.send(`SHORT otvoren: ${normalizedSymbol}\nUlaz: ${entryPrice}\nSL: ${stopLossPrice}\nTP: ${takeProfitPrice}`);
+
   } catch (err) {
     console.error(`❌ Greška pri otvaranju SHORT: ${err.message}`);
     await notifier.send(`❌ Greška: ${err.message}`);
