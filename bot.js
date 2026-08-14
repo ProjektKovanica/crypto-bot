@@ -7,6 +7,7 @@ const { TRADING_PAIRS } = require('./config');
 const { getIndicators } = require('./strategies/indicators');
 const { evaluateAndTrade } = require('./strategies/trend_pullback');
 const { syncPositions, monitorTrailingStops } = require('./strategies/position_manager');
+const { getTradableBalance } = require('./balance');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -33,36 +34,11 @@ const botState = {
 global.botState = botState;
 
 function getUsdcAvailableBalance(balance) {
-  try {
-    const assets = balance?.info?.assets;
-    if (Array.isArray(assets) && assets.length > 0) {
-      const usdcAsset = assets.find(a => String(a.asset).toUpperCase() === 'USDC');
-      if (usdcAsset && usdcAsset.availableBalance != null) {
-        const v = Number(usdcAsset.availableBalance);
-        if (Number.isFinite(v) && v > 0) return { value: v, source: 'info.assets.USDC.availableBalance' };
-      }
-
-      const usdSMAsset = assets.find(a => String(a.asset).toUpperCase() === 'U');
-      if (usdSMAsset && usdSMAsset.availableBalance != null) {
-        const v = Number(usdSMAsset.availableBalance);
-        if (Number.isFinite(v) && v > 0) return { value: v, source: 'info.assets.U.availableBalance' };
-      }
-    }
-  } catch (_) {}
-
-  const freeUsdcMap = Number(balance?.free?.USDC);
-  if (Number.isFinite(freeUsdcMap) && freeUsdcMap > 0) return { value: freeUsdcMap, source: 'free.USDC' };
-
-  const freeUsdcObj = Number(balance?.USDC?.free);
-  if (Number.isFinite(freeUsdcObj) && freeUsdcObj > 0) return { value: freeUsdcObj, source: 'USDC.free' };
-
-  const totalUsdcMap = Number(balance?.total?.USDC);
-  if (Number.isFinite(totalUsdcMap) && totalUsdcMap > 0) return { value: totalUsdcMap, source: 'total.USDC(fallback)' };
-
-  const totalUsdcObj = Number(balance?.USDC?.total);
-  if (Number.isFinite(totalUsdcObj) && totalUsdcObj > 0) return { value: totalUsdcObj, source: 'USDC.total(fallback)' };
-
-  return { value: 0, source: 'none' };
+  // Collateral-aware resolution. Handles EEA/MiCA accounts where the
+  // collateral asset is BNFCR rather than USDC. See balance.js for detail.
+  const r = getTradableBalance(balance);
+  for (const w of r.warnings) console.warn(`⚠️  ${w}`);
+  return { value: r.free, source: r.source, currency: r.currency, used: r.used, total: r.total };
 }
 
 async function checkMarkets() {
@@ -101,10 +77,10 @@ async function checkMarkets() {
     const usdcResolved = getUsdcAvailableBalance(balance);
     const usdcBalance = usdcResolved.value;
 
-    console.log(`\n[${new Date().toISOString()}] Balans: $${Number(usdcBalance || 0).toFixed(2)} | Skeniram... (source=${usdcResolved.source})`);
+    console.log(`\n[${new Date().toISOString()}] Balans: ${Number(usdcBalance || 0).toFixed(2)} ${usdcResolved.currency} | Skeniram... (source=${usdcResolved.source})`);
 
     if (usdcBalance < 20) {
-      console.log(`[CYCLE ${cycleId}] Nedovoljan free USDC (${usdcBalance}). Minimum je 20.`);
+      console.log(`[CYCLE ${cycleId}] Nedovoljan free balans (${usdcBalance.toFixed(2)} ${usdcResolved.currency}). Minimum je 20.`);
       return;
     }
 
@@ -199,27 +175,29 @@ async function startBot() {
 
     setInterval(() => monitorTrailingStops(exchange, db), 30000);
 
-    // ── Startup margin check ────────────────────────────────
-    // Warn if most of the balance is locked in used margin.
+    // ── Startup balance check ───────────────────────────────
     try {
       const bal = await exchange.fetchBalance();
-      const assets = bal?.info?.assets;
-      if (Array.isArray(assets)) {
-        const usdc = assets.find(a => String(a.asset).toUpperCase() === 'USDC')
-          || assets.find(a => String(a.asset).toUpperCase() === 'U');
-        if (usdc) {
-          const free = parseFloat(usdc.availableBalance) || 0;
-          const total = parseFloat(usdc.walletBalance) || 0;
-          const used = Math.max(0, total - free);
-          if (used > 0 && used / total > 0.5) {
-            console.warn(`⚠️  UPOZORENJE: $${used.toFixed(2)} od $${total.toFixed(2)} je u Used(Margin).`);
-            console.warn(`   Samo $${free.toFixed(2)} je Free.`);
-            console.warn(`   Pokreni \`npm run free-margin\` da oslobodiš margin (zatvara pozicije i naloge).`);
-            console.warn(`   Ili \`npm run free-margin:dry\` za pregled bez izvršavanja.`);
-          }
-        }
+      const r = getTradableBalance(bal);
+      console.log(`\n💰 Collateral: ${r.currency} | Free: ${r.free.toFixed(2)} | Used: ${r.used.toFixed(2)} | Total: ${r.total.toFixed(2)} (source=${r.source})`);
+
+      if (r.currency === 'BNFCR') {
+        console.log('ℹ️  EEA/MiCA račun otkriven — collateral je BNFCR (1 BNFCR = 1 USD).');
       }
-    } catch (_) {}
+
+      for (const w of r.warnings) console.warn(`⚠️  ${w}`);
+
+      if (r.free < 20) {
+        console.warn(`\n⚠️  Free balans (${r.free.toFixed(2)} ${r.currency}) je ispod minimuma od 20.`);
+        console.warn('   Bot neće otvarati pozicije dok se balans ne poveća.');
+        console.warn('   Pokreni `npm run diagnose` za detaljan pregled.');
+      } else if (r.used > 0 && r.total > 0 && r.used / r.total > 0.5) {
+        console.warn(`\n⚠️  ${r.used.toFixed(2)} od ${r.total.toFixed(2)} ${r.currency} je u Used(Margin).`);
+        console.warn('   Pokreni `npm run free-margin` da oslobodiš margin.');
+      }
+    } catch (err) {
+      console.warn('⚠️  Ne mogu pročitati balans pri startu:', err.message);
+    }
   } catch (error) {
     console.error('Kritična greška:', error.message);
     process.exit(1);

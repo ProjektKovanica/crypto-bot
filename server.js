@@ -5,6 +5,7 @@ const { rateLimit } = require('express-rate-limit');
 const { db } = require('./db');
 const { TRADING_PAIRS } = require('./config');
 const { forceClosePosition, closeAllPositions, moveSLToBreakeven } = require('./strategies/position_manager');
+const { getTradableBalance } = require('./balance');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 4000;
@@ -87,33 +88,10 @@ function formatUptimeSec(sec) {
 }
 
 async function getUsdcBalanceSafe() {
-  if (!global.exchange) return { free: 0, used: 0, total: 0, source: 'exchange-not-ready' };
+  if (!global.exchange) return { free: 0, used: 0, total: 0, currency: 'USD', source: 'exchange-not-ready' };
   const balance = await global.exchange.fetchBalance();
-
-  let free = 0, used = 0, total = 0, source = 'none';
-  try {
-    const assets = balance?.info?.assets;
-    if (Array.isArray(assets)) {
-      const a = assets.find(x => String(x.asset).toUpperCase() === 'USDC')
-        || assets.find(x => String(x.asset).toUpperCase() === 'U');
-      if (a) {
-        free = parseFloat(a.availableBalance) || 0;
-        total = parseFloat(a.walletBalance) || 0;
-        used = Math.max(0, total - free);
-        source = `info.assets.${a.asset}`;
-      }
-    }
-  } catch (_) {}
-
-  if (!free && !total) {
-    const u = balance?.USDC || {};
-    free = Number(u.free) || 0;
-    used = Number(u.used) || 0;
-    total = Number(u.total) || 0;
-    source = 'CCXT.USDC';
-  }
-
-  return { free, used, total, source };
+  const r = getTradableBalance(balance);
+  return { free: r.free, used: r.used, total: r.total, currency: r.currency, source: r.source };
 }
 
 async function getStatusText() {
@@ -138,9 +116,10 @@ async function getBalanceText() {
   return [
     `💰 *Balance*`,
     ``,
-    `• Free: *$${b.free.toFixed(2)}*`,
-    `• Used: $${b.used.toFixed(2)}`,
-    `• Total: $${b.total.toFixed(2)}`,
+    `• Currency: ${b.currency}`,
+    `• Free: *${b.free.toFixed(2)}*`,
+    `• Used: ${b.used.toFixed(2)}`,
+    `• Total: ${b.total.toFixed(2)}`,
     `• Source: \`${b.source}\``
   ].join('\n');
 }
@@ -397,7 +376,7 @@ app.get('/api/balance', async (req, res) => {
   try {
     if (!global.exchange) return res.status(500).json({ error: 'Exchange nije spreman' });
     const b = await getUsdcBalanceSafe();
-    res.json({ free: b.free, used: b.used, total: b.total });
+    res.json({ free: b.free, used: b.used, total: b.total, currency: b.currency });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

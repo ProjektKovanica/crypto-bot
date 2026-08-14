@@ -20,6 +20,7 @@
 
 require('dotenv').config();
 const ccxt = require('ccxt');
+const { getTradableBalance } = require('./balance');
 
 if (!process.env.BINANCE_API_KEY || !process.env.BINANCE_SECRET) {
   console.error('❌ BINANCE_API_KEY and BINANCE_SECRET must be set in .env');
@@ -202,6 +203,31 @@ async function main() {
     }
   } catch (err) {
     console.log(`  Could not read spot wallet: ${err.message}`);
+  }
+
+  console.log('\n═══ WHAT THE BOT WILL USE ═══');
+  const resolved = getTradableBalance(balance);
+  console.log(`  Collateral asset : ${resolved.currency}`);
+  console.log(`  Free (tradable)  : ${resolved.free.toFixed(4)}`);
+  console.log(`  Used (margin)    : ${resolved.used.toFixed(4)}`);
+  console.log(`  Total            : ${resolved.total.toFixed(4)}`);
+  console.log(`  Resolved via     : ${resolved.source}`);
+  for (const w of resolved.warnings) console.log(`  ⚠️  ${w}`);
+
+  if (resolved.currency === 'BNFCR') {
+    console.log('\n  ℹ️  EEA/MiCA account detected.');
+    console.log('     Your collateral is BNFCR (Binance Futures Credits), 1 BNFCR = 1 USD.');
+    console.log('     Under MiCA, EEA users cannot use USDT/USDC directly as futures');
+    console.log('     collateral. BNFCR still margins USDC/USDT-denominated pairs,');
+    console.log('     so your BTC/USDC etc. pairs work normally.');
+    console.log('     This mode requires Cross Margin + Multi-Assets Mode (both expected).');
+  }
+
+  if (resolved.free >= 20) {
+    console.log(`\n  ✅ ${resolved.free.toFixed(2)} ${resolved.currency} available — above the bot's minimum of 20.`);
+  } else {
+    console.log(`\n  ⚠️  ${resolved.free.toFixed(2)} ${resolved.currency} available — BELOW the bot's minimum of 20.`);
+    console.log('     The bot will skip every cycle until this rises above 20.');
   }
 
   console.log('\n═══ NEXT STEPS ═══');

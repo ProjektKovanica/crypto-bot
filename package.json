@@ -10,6 +10,7 @@
     "free-margin": "node free-margin.js",
     "free-margin:dry": "node free-margin.js --dry-run",
     "diagnose": "node diagnose-balance.js",
+    "test": "node test-balance.js",
     "enable-multi-assets": "node diagnose-balance.js --enable-multi-assets"
   },
   "keywords": [

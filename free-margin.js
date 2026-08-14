@@ -20,6 +20,7 @@ require('dotenv').config();
 const ccxt = require('ccxt');
 
 const { TRADING_PAIRS } = require('./config');
+const { getTradableBalance } = require('./balance');
 
 const args = new Set(process.argv.slice(2));
 const DRY_RUN = args.has('--dry-run');
@@ -45,26 +46,8 @@ const exchange = new ccxt.binance({
 });
 
 function getUsdcBalance(balance) {
-  let free = 0, used = 0, total = 0;
-  try {
-    const assets = balance?.info?.assets;
-    if (Array.isArray(assets)) {
-      const a = assets.find(x => String(x.asset).toUpperCase() === 'USDC')
-        || assets.find(x => String(x.asset).toUpperCase() === 'U');
-      if (a) {
-        free = parseFloat(a.availableBalance) || 0;
-        total = parseFloat(a.walletBalance) || 0;
-        used = Math.max(0, total - free);
-      }
-    }
-  } catch (_) {}
-  if (!free && !total) {
-    const u = balance?.USDC || {};
-    free = Number(u.free) || 0;
-    used = Number(u.used) || 0;
-    total = Number(u.total) || 0;
-  }
-  return { free, used, total };
+  const r = getTradableBalance(balance);
+  return { free: r.free, used: r.used, total: r.total, currency: r.currency, warnings: r.warnings };
 }
 
 async function main() {
@@ -75,12 +58,15 @@ async function main() {
   const balanceBefore = await exchange.fetchBalance();
   const before = getUsdcBalance(balanceBefore);
   console.log('\n━━━ BALANCE BEFORE ━━━');
-  console.log(`  Free:  $${before.free.toFixed(2)}`);
-  console.log(`  Used:  $${before.used.toFixed(2)} (margin)`);
-  console.log(`  Total: $${before.total.toFixed(2)}`);
+  console.log(`  Currency: ${before.currency}`);
+  console.log(`  Free:  ${before.free.toFixed(2)}`);
+  console.log(`  Used:  ${before.used.toFixed(2)} (margin)`);
+  console.log(`  Total: ${before.total.toFixed(2)}`);
+  for (const w of before.warnings) console.warn(`  ⚠️  ${w}`);
 
   if (before.used < 0.01) {
     console.log('\n✅ No used margin detected. Nothing to free.');
+    console.log(`   You have ${before.free.toFixed(2)} ${before.currency} available to trade.`);
     return;
   }
 
@@ -186,21 +172,18 @@ async function main() {
     const after = getUsdcBalance(balanceAfter);
 
     console.log('\n━━━ BALANCE AFTER ━━━');
-    console.log(`  Free:  $${after.free.toFixed(2)}`);
-    console.log(`  Used:  $${after.used.toFixed(2)} (margin)`);
-    console.log(`  Total: $${after.total.toFixed(2)}`);
+    console.log(`  Currency: ${after.currency}`);
+    console.log(`  Free:  ${after.free.toFixed(2)}`);
+    console.log(`  Used:  ${after.used.toFixed(2)} (margin)`);
+    console.log(`  Total: ${after.total.toFixed(2)}`);
 
     const freed = after.free - before.free;
-    console.log(`\n💰 Freed: $${freed.toFixed(2)} moved from Used(Margin) → Free`);
+    console.log(`\n💰 Freed: ${freed.toFixed(2)} ${after.currency} moved from Used(Margin) → Free`);
 
     if (after.used > 0.01) {
-      console.log(`\n⚠️  Still $${after.used.toFixed(2)} in used margin.`);
+      console.log(`\n⚠️  Still ${after.used.toFixed(2)} ${after.currency} in used margin.`);
       console.log(`\n   Run the diagnostic to see exactly which bucket holds it:`);
-      console.log(`     node diagnose-balance.js`);
-      console.log(`\n   Common causes when no positions/orders exist:`);
-      console.log(`     - Single-Asset Mode: USDC is not the active collateral asset`);
-      console.log(`     - Funds are in the Spot wallet, not the Futures wallet`);
-      console.log(`     - Isolated-margin position on an unlisted symbol`);
+      console.log(`     npm run diagnose`);
     }
   } else {
     console.log('\n🔍 Dry run complete. Run without --dry-run to execute.');
