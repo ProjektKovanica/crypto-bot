@@ -1,3 +1,9 @@
+require('dotenv').config();
+
 const TRADING_PAIRS = ['BTC/USDC', 'ETH/USDC', 'BNB/USDC', 'XRP/USDC', 'SOL/USDC', 'DOGE/USDC'];
 
-module.exports = { TRADING_PAIRS };
+module.exports = {
+  TRADING_PAIRS,
+  BINANCE_API_KEY: process.env.BINANCE_API_KEY || '',
+  BINANCE_SECRET_KEY: process.env.BINANCE_SECRET_KEY || ''
+};
